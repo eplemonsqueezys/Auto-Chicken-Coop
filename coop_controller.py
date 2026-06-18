@@ -1,28 +1,45 @@
 #!/usr/bin/env python3
 """
 Chicken Coop Automation Controller
-Hardware: Raspberry Pi 4 + MCP3008 ADC
+Hardware: Raspberry Pi 5 + Adafruit PCA9685 PWM Servo Driver + MCP3008 ADC
+
+Pi 5 uses the RP1 GPIO chip — gpiozero must use the lgpio backend.
+Set env var before running:  GPIOZERO_PIN_FACTORY=lgpio
+Or use setup.sh which configures this automatically in the systemd service.
+
+Servo control uses the same Adafruit PCA9685 board and SERVOMIN/SERVOMAX
+values as the workshop dust collection system.
 
 Systems controlled:
   1. Temperature monitoring (DHT22)
-  2. Vent sliders (2x MG996R servo, temp-triggered)
+  2. Vent sliders (2x servo via PCA9685, temp-triggered)
   3. Circulation fan (relay, temp-triggered)
   4. Water level indicator (3x float switch, 3x LED)
-  5. Chicken door (linear actuator, dawn/dusk via LDR + time)
+  5. Chicken door (linear actuator via L298N, dawn/dusk via LDR + time)
   6. Coop & run lights (2x relay, time-based schedule)
   7. Food level indicator (potentiometer lever, LED)
 
-Run with: sudo python3 coop_controller.py
-(sudo needed for hardware PWM servo control)
+Run manually:  sudo GPIOZERO_PIN_FACTORY=lgpio python3 coop_controller.py
 """
 
+import os
 import time
 import board
+import busio
 import adafruit_dht
-from gpiozero import Servo, Motor, Button, LED, OutputDevice, MCP3008
+from adafruit_pca9685 import PCA9685
+from gpiozero import Device, Motor, Button, LED, OutputDevice, MCP3008
+from gpiozero.pins.lgpio import LGPIOFactory
 from datetime import datetime
 import config
 import logging
+
+# ── Pi 5: force lgpio pin factory ─────────────────────────────
+# Pi 5 uses the RP1 GPIO chip; RPi.GPIO doesn't work on it.
+# lgpio is the correct backend. We set it here in code AND via the
+# GPIOZERO_PIN_FACTORY env var in setup.sh as a belt-and-suspenders approach.
+if os.environ.get("GPIOZERO_PIN_FACTORY", "lgpio") == "lgpio":
+    Device.pin_factory = LGPIOFactory()
 
 # ── Logging setup ──────────────────────────────────────────────
 logging.basicConfig(
@@ -36,23 +53,50 @@ logging.basicConfig(
 log = logging.getLogger("coop")
 
 
+# ── PCA9685 servo helper ───────────────────────────────────────
+
+def set_servo(pca, channel, pulse_value):
+    """
+    Set a servo channel to a raw pulse value.
+    Matches the Arduino: pwm.setPWM(channel, 0, pulse_value)
+    pulse_value: SERVOMIN (150) = closed, SERVOMAX (325) = open
+    """
+    # PCA9685 Python library uses 16-bit duty cycle (0–65535).
+    # Convert from the 12-bit (0–4095) raw pulse value used in Arduino.
+    duty = int(pulse_value * 65535 / 4096)
+    pca.channels[channel].duty_cycle = duty
+
+
 # ── Hardware initialisation ────────────────────────────────────
 
 def init_hardware():
-    """Initialise all GPIO devices. Returns a dict of device handles."""
+    """Initialise all devices. Returns a dict of handles."""
     log.info("Initialising hardware...")
 
     hw = {}
 
+    # PCA9685 PWM servo driver via I2C (SDA=GPIO2, SCL=GPIO3)
+    i2c = busio.I2C(board.SCL, board.SDA)
+    pca = PCA9685(i2c)
+    pca.frequency = 60    # 60 Hz — same as Arduino pwm.setPWMFreq(60)
+    hw["pca"] = pca
+
+    # Calibrate both vent servos to known positions on startup
+    # (mirrors the setup() block in the Arduino sketch)
+    log.info("Calibrating vent servos...")
+    set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_OPEN)
+    set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_OPEN)
+    time.sleep(1)
+    set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_CLOSE)
+    set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_CLOSE)
+    time.sleep(1)
+    log.info("Servo calibration done — vents closed")
+
     # DHT22 temperature + humidity sensor
     hw["dht"] = adafruit_dht.DHT22(board.D4)
 
-    # Vent servos (gpiozero uses software PWM by default; fine for prototype)
-    hw["servo1"] = Servo(config.PIN_SERVO_1)
-    hw["servo2"] = Servo(config.PIN_SERVO_2)
-
-    # Fan relay — active HIGH
-    hw["fan"] = OutputDevice(config.PIN_FAN_RELAY, active_high=True, initial_value=False)
+    # Fan relay — active HIGH (HIGH = off, LOW = on, same as Arduino sketches)
+    hw["fan"] = OutputDevice(config.PIN_FAN_RELAY, active_high=False, initial_value=False)
 
     # Water level float switches (NO: float up = water present = circuit closed)
     hw["water_low"]  = Button(config.PIN_WATER_LOW,  pull_up=False)
@@ -67,21 +111,21 @@ def init_hardware():
     # Chicken door — L298N H-bridge via gpiozero Motor
     hw["door_motor"] = Motor(forward=config.PIN_DOOR_IN1, backward=config.PIN_DOOR_IN2)
 
-    # Door limit switches (NO: pressed = actuator has reached that end)
+    # Door limit switches (NO: active = actuator has reached that end)
     hw["limit_open"]   = Button(config.PIN_DOOR_LIMIT_OPEN,   pull_up=True)
     hw["limit_closed"] = Button(config.PIN_DOOR_LIMIT_CLOSED, pull_up=True)
 
-    # Light relays
-    hw["coop_light"] = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=True, initial_value=False)
-    hw["run_light"]  = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=True, initial_value=False)
+    # Light relays (active LOW — same convention as Arduino relay modules)
+    hw["coop_light"] = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=False, initial_value=False)
+    hw["run_light"]  = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=False, initial_value=False)
 
     # Food level LEDs
     hw["food_red"]   = LED(config.PIN_FOOD_LED_RED)
     hw["food_green"] = LED(config.PIN_FOOD_LED_GREEN)
 
     # MCP3008 analog inputs via SPI
-    hw["ldr"]  = MCP3008(channel=config.MCP3008_LDR_CHANNEL)    # Light sensor
-    hw["food"] = MCP3008(channel=config.MCP3008_FOOD_CHANNEL)   # Food level pot
+    hw["ldr"]  = MCP3008(channel=config.MCP3008_LDR_CHANNEL)    # Dawn/dusk light sensor
+    hw["food"] = MCP3008(channel=config.MCP3008_FOOD_CHANNEL)   # Food level potentiometer
 
     log.info("Hardware initialised OK")
     return hw
@@ -90,22 +134,24 @@ def init_hardware():
 # ── Vent / Fan control ─────────────────────────────────────────
 
 def update_vents_and_fan(hw, state, temp):
-    """Open/close vents and fan based on temperature with hysteresis."""
+    """Open/close vent sliders and fan based on temperature with hysteresis."""
 
-    # Vents
+    pca = hw["pca"]
+
+    # Vents — open when hot, close when cooled back down
     if not state["vents_open"] and temp >= config.TEMP_VENT_OPEN:
-        hw["servo1"].value = config.SERVO_VENT_OPEN
-        hw["servo2"].value = config.SERVO_VENT_OPEN
+        set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_OPEN)
+        set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_OPEN)
         state["vents_open"] = True
         log.info(f"Vents OPENED (temp={temp:.1f}°C)")
 
     elif state["vents_open"] and temp <= config.TEMP_VENT_CLOSE:
-        hw["servo1"].value = config.SERVO_VENT_CLOSE
-        hw["servo2"].value = config.SERVO_VENT_CLOSE
+        set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_CLOSE)
+        set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_CLOSE)
         state["vents_open"] = False
         log.info(f"Vents CLOSED (temp={temp:.1f}°C)")
 
-    # Fan
+    # Fan — on when hotter, off when cooled
     if not state["fan_on"] and temp >= config.TEMP_FAN_ON:
         hw["fan"].on()
         state["fan_on"] = True
@@ -121,9 +167,8 @@ def update_vents_and_fan(hw, state, temp):
 
 def update_water_leds(hw):
     """
-    Read float switches and update indicator LEDs.
-    Float switches are NO: is_active (pressed) = water is at that height.
-    Logic: show the highest level that is triggered.
+    Read float switches, light the LED for the highest active level.
+    Float switches are NO: is_active = water is at or above that sensor.
     """
     has_high = hw["water_high"].is_active
     has_mid  = hw["water_mid"].is_active
@@ -138,7 +183,7 @@ def update_water_leds(hw):
     elif has_mid:
         hw["water_yellow"].on()    # Mid
     elif has_low:
-        hw["water_red"].on()       # Low — still some water
+        hw["water_red"].on()       # Low — getting there
     else:
         hw["water_red"].on()       # Empty — below lowest sensor
 
@@ -146,7 +191,7 @@ def update_water_leds(hw):
 # ── Chicken door ───────────────────────────────────────────────
 
 def open_door(hw, state):
-    """Drive actuator to open position, stop when limit switch triggers."""
+    """Drive actuator forward until fully-open limit switch fires."""
     if state["door_open"] is True:
         return
 
@@ -156,7 +201,7 @@ def open_door(hw, state):
     start = time.time()
     while not hw["limit_open"].is_active:
         if time.time() - start > config.DOOR_ACTUATOR_TIMEOUT:
-            log.warning("Door OPEN timeout — check limit switch wiring!")
+            log.warning("Door OPEN timeout — check limit switch!")
             break
         time.sleep(0.1)
 
@@ -166,7 +211,7 @@ def open_door(hw, state):
 
 
 def close_door(hw, state):
-    """Drive actuator to closed position, stop when limit switch triggers."""
+    """Drive actuator backward until fully-closed limit switch fires."""
     if state["door_open"] is False:
         return
 
@@ -176,7 +221,7 @@ def close_door(hw, state):
     start = time.time()
     while not hw["limit_closed"].is_active:
         if time.time() - start > config.DOOR_ACTUATOR_TIMEOUT:
-            log.warning("Door CLOSE timeout — check limit switch wiring!")
+            log.warning("Door CLOSE timeout — check limit switch!")
             break
         time.sleep(0.1)
 
@@ -187,16 +232,13 @@ def close_door(hw, state):
 
 def update_door(hw, state, now):
     """
-    Decide whether to open or close the door.
-    Uses LDR (dawn/dusk sensing) confirmed against clock limits.
+    Open at dawn, close at dusk.
+    Uses LDR for natural light sensing + clock as safety net for overcast days.
     """
-    hour = now.hour
-    light_level = hw["ldr"].value   # 0.0 dark → 1.0 bright
+    hour        = now.hour
+    light_level = hw["ldr"].value   # 0.0 = dark, 1.0 = bright
 
-    # Dawn: LDR says bright AND we're past the earliest allowed open hour
     is_dawn = (light_level >= config.LDR_DAWN_THRESHOLD) or (hour >= config.DOOR_OPEN_LATEST_HOUR)
-
-    # Dusk: LDR says dark AND we're past the earliest allowed close hour
     is_dusk = (light_level <= config.LDR_DUSK_THRESHOLD) and (hour >= config.DOOR_CLOSE_EARLIEST_HOUR)
 
     if is_dawn and state["door_open"] is not True:
@@ -208,10 +250,10 @@ def update_door(hw, state, now):
 # ── Lights ─────────────────────────────────────────────────────
 
 def update_lights(hw, state, now):
-    """Turn coop and run lights on/off according to the configured schedule."""
+    """Switch coop and run lights on/off per the configured time schedule."""
     current_mins = now.hour * 60 + now.minute
-    on_mins  = config.LIGHT_ON_HOUR  * 60 + config.LIGHT_ON_MINUTE
-    off_mins = config.LIGHT_OFF_HOUR * 60 + config.LIGHT_OFF_MINUTE
+    on_mins      = config.LIGHT_ON_HOUR  * 60 + config.LIGHT_ON_MINUTE
+    off_mins     = config.LIGHT_OFF_HOUR * 60 + config.LIGHT_OFF_MINUTE
 
     should_be_on = on_mins <= current_mins < off_mins
 
@@ -232,25 +274,25 @@ def update_lights(hw, state, now):
 
 def update_food_leds(hw):
     """
-    Read potentiometer at food lever pivot.
-    0.0 = lever fully down (feeder empty), 1.0 = lever up (feeder full).
-    Calibrate FOOD_LOW_THRESHOLD in config.py after fitting the lever.
+    Read potentiometer at food lever pivot via MCP3008.
+    0.0 = lever down (empty), 1.0 = lever up (full).
+    Adjust FOOD_LOW_THRESHOLD in config.py after fitting the lever.
     """
     food_level = hw["food"].value
 
     if food_level < config.FOOD_LOW_THRESHOLD:
         hw["food_red"].on()
         hw["food_green"].off()
-        log.info(f"Food LOW ({food_level:.2f}) — red light on")
+        log.info(f"Food LOW ({food_level:.2f})")
     else:
         hw["food_red"].off()
         hw["food_green"].on()
 
 
-# ── Startup checks ─────────────────────────────────────────────
+# ── Startup door detection ─────────────────────────────────────
 
 def detect_door_state(hw, state):
-    """Read limit switches at boot to determine current door position."""
+    """Check limit switches at boot so we know starting position."""
     if hw["limit_open"].is_active:
         state["door_open"] = True
         log.info("Startup: door is OPEN")
@@ -259,7 +301,7 @@ def detect_door_state(hw, state):
         log.info("Startup: door is CLOSED")
     else:
         state["door_open"] = None
-        log.warning("Startup: door position unknown (neither limit switch active)")
+        log.warning("Startup: door position unknown — will move on first dawn/dusk trigger")
 
 
 # ── Main loop ──────────────────────────────────────────────────
@@ -288,7 +330,6 @@ def main():
                 log.info(f"Temp: {temp:.1f}°C  Humidity: {humidity:.1f}%")
                 update_vents_and_fan(hw, state, temp)
         except RuntimeError as e:
-            # DHT22 occasionally misreads — just skip this cycle
             log.debug(f"DHT22 read error (will retry): {e}")
 
         # 2. Water level LEDs
@@ -314,5 +355,4 @@ if __name__ == "__main__":
     except Exception as e:
         log.exception(f"Unhandled exception: {e}")
     finally:
-        # gpiozero cleans up GPIO automatically on object deletion
         log.info("Controller stopped.")

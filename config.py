@@ -3,14 +3,22 @@ Chicken Coop Automation — Configuration
 Edit this file to tune thresholds, schedules, and pin assignments.
 """
 
+# ── Adafruit PCA9685 PWM Servo Driver (I2C) ───────────────────
+# Same board/library as the workshop dust collection system.
+# Pi connects via I2C: SDA=GPIO2 (pin 3), SCL=GPIO3 (pin 5)
+
+PCA9685_CHANNELS = 16     # 16-channel board
+SERVOMIN = 150            # Minimum pulse length (matches workshop system)
+SERVOMAX = 325            # Maximum pulse length (matches workshop system)
+
+# PCA9685 channel assignments for vent servos
+SERVO_VENT1_CHANNEL = 0   # Vent slider 1
+SERVO_VENT2_CHANNEL = 1   # Vent slider 2
+
 # ── GPIO Pin Assignments (BCM numbering) ──────────────────────
 
 # Temperature (DHT22)
 PIN_DHT22 = 4
-
-# Vent servos
-PIN_SERVO_1 = 12    # Hardware PWM channel 0
-PIN_SERVO_2 = 13    # Hardware PWM channel 1
 
 # Fan relay
 PIN_FAN_RELAY = 17
@@ -51,12 +59,13 @@ TEMP_VENT_CLOSE = 25.0   # Close vents below this (hysteresis gap prevents chatt
 TEMP_FAN_ON  = 30.0      # Turn on circulation fan above this temp
 TEMP_FAN_OFF = 28.0      # Turn off fan below this (hysteresis)
 
-# ── Servo Positions ───────────────────────────────────────────
-# gpiozero Servo: -1.0 = fully counter-clockwise, 1.0 = fully clockwise
-# Calibrate these after mounting — swap signs if servo moves wrong way
+# ── Servo Positions (PCA9685 raw pulse values) ────────────────
+# Matches your existing workshop system (SERVOMIN / SERVOMAX above).
+# SERVOMAX = slider open, SERVOMIN = slider closed.
+# Swap if your vent moves the wrong direction after mounting.
 
-SERVO_VENT_OPEN  =  1.0
-SERVO_VENT_CLOSE = -1.0
+SERVO_VENT_OPEN  = SERVOMAX   # 325 — vent fully open
+SERVO_VENT_CLOSE = SERVOMIN   # 150 — vent fully closed
 
 # ── Light Schedule ────────────────────────────────────────────
 

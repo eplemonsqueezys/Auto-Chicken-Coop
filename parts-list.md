@@ -6,18 +6,18 @@
 
 | Qty | Part | Notes |
 |-----|------|-------|
-| 1 | Raspberry Pi 4 (2GB) | Use for development/prototype; swap for Pi Zero 2W for final build |
-| 1 | MicroSD card, 16GB+ (Class 10) | OS storage |
-| 1 | Official Raspberry Pi 5V/3A USB-C power supply | Pi 4 draws more than generic supplies can handle |
+| 1 | Raspberry Pi 5 (2GB or 4GB) | Pi 5 uses RP1 GPIO chip — needs lgpio, not RPi.GPIO |
+| 1 | MicroSD card, 32GB+ (Class 10 / A2) | OS storage — A2 rated card recommended for Pi 5 |
+| 1 | Official Raspberry Pi 5 USB-C power supply (27W) | Pi 5 requires 5V/5A — standard Pi 4 supply is NOT enough |
+| 1 | **GPIO breakout board + 40-pin ribbon cable** | Strongly recommended — you're using ~20 GPIOs; labeled breadboard pins save huge headaches. Get "Adafruit T-Cobbler Plus" or any 40-pin GPIO breakout |
 | 1 | **MCP3008** 8-channel SPI ADC | Critical — Pi has NO analog inputs; needed for LDR and food potentiometer |
 | 1 | Weatherproof project enclosure (IP65+) | Houses Pi + electronics |
 | — | Waterproof cable glands (M12 or M16) | Feed wires into enclosure |
 | — | Terminal block strips | Clean wiring |
 | — | 22 AWG hookup wire, assorted colors | General wiring |
 | — | Heat shrink tubing | Insulate connections |
-| — | 40-pin GPIO ribbon cable + breakout board (optional) | Makes prototyping much easier |
 
-> **Pi vs Arduino for this project:** The Pi runs full Python, handles scheduling natively with `datetime`, and can serve a web dashboard later. The trade-off is it needs the MCP3008 chip for any analog readings.
+> **Pi 5 note:** Uses a new RP1 GPIO chip. `RPi.GPIO` does NOT work — the code uses `lgpio` instead. `setup.sh` handles this automatically.
 
 ---
 
