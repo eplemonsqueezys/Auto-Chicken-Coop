@@ -1,3 +1,34 @@
+import os
+
+# ── Simulation ────────────────────────────────────────────────────────────
+# Test the whole system with NOTHING wired up, then bring real hardware online
+# one subsystem at a time.
+#
+#   SIM_ALL = True   -> everything is simulated (good first run, no hardware).
+#   SIM_ALL = False  -> obey the per-subsystem flags in SIM below.
+#
+# To bring a subsystem online: wire it up, set its flag to False, rerun, and
+# confirm that one piece works while everything else stays simulated.
+SIM_ALL = True
+
+SIM = {
+    "pca":    True,   # vent servos (PCA9685 over I2C)
+    "dht":    True,   # DHT22 temp / humidity sensor
+    "fan":    True,   # fan relay
+    "water":  True,   # water-level float switches + red/yellow/green LEDs
+    "door":   True,   # door motor (L298N) + open/closed limit switches
+    "lights": True,   # coop + run light relays
+    "food":   True,   # food-level LEDs
+    "adc":    True,   # MCP3008 ADC (LDR light sensor + food-level pot)
+}
+
+# Where logs are written (and read by the debug panel). Kept inside the project
+# folder so it works no matter which user runs it (avoids assuming /home/pi).
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coop.log")
+
+# How long the simulated door takes to travel between limit switches (seconds).
+SIM_DOOR_TRAVEL_S = 2.0
+
 # PCA9685 — same board as the workshop vac system
 # Servos: MG995 DIGI HI-SPEED (metal gear, same pulse range as MG996R)
 SERVOMIN = 150

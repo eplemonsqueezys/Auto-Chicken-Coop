@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 # Run: sudo GPIOZERO_PIN_FACTORY=lgpio python3 coop_controller.py
+#
+# Hardware is created through hardware.py, which simulates any subsystem whose
+# flag is set in config.SIM / config.SIM_ALL. With SIM_ALL = True this runs the
+# full control loop with nothing wired up.
 
-import os
 import time
-import board
-import busio
-import adafruit_dht
-from adafruit_pca9685 import PCA9685
-from gpiozero import Device, Motor, Button, LED, OutputDevice, MCP3008
-from gpiozero.pins.lgpio import LGPIOFactory
 from datetime import datetime
-import config
 import logging
 
-# Pi 5 uses the RP1 GPIO chip — RPi.GPIO doesn't work, lgpio does
-if os.environ.get("GPIOZERO_PIN_FACTORY", "lgpio") == "lgpio":
-    Device.pin_factory = LGPIOFactory()
+import config
+import hardware
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("/home/pi/coop.log")]
+    handlers=[logging.StreamHandler(), logging.FileHandler(config.LOG_PATH)]
 )
 log = logging.getLogger("coop")
 
@@ -31,10 +26,10 @@ def set_servo(pca, channel, pulse):
 
 
 def init_hardware():
+    log.info(hardware.mode_banner())
     hw = {}
 
-    i2c = busio.I2C(board.SCL, board.SDA)
-    pca = PCA9685(i2c)
+    pca = hardware.make_pca()
     pca.frequency = 60
     hw["pca"] = pca
 
@@ -46,23 +41,23 @@ def init_hardware():
     set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_CLOSE)
     time.sleep(1)
 
-    hw["dht"]         = adafruit_dht.DHT22(board.D4)
-    hw["fan"]         = OutputDevice(config.PIN_FAN_RELAY, active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-    hw["water_low"]   = Button(config.PIN_WATER_LOW,  pull_up=False)
-    hw["water_mid"]   = Button(config.PIN_WATER_MID,  pull_up=False)
-    hw["water_high"]  = Button(config.PIN_WATER_HIGH, pull_up=False)
-    hw["water_red"]   = LED(config.PIN_WATER_LED_RED)
-    hw["water_yellow"]= LED(config.PIN_WATER_LED_YELLOW)
-    hw["water_green"] = LED(config.PIN_WATER_LED_GREEN)
-    hw["door_motor"]  = Motor(forward=config.PIN_DOOR_IN1, backward=config.PIN_DOOR_IN2)
-    hw["limit_open"]  = Button(config.PIN_DOOR_LIMIT_OPEN,   pull_up=True)
-    hw["limit_closed"]= Button(config.PIN_DOOR_LIMIT_CLOSED, pull_up=True)
-    hw["coop_light"]  = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-    hw["run_light"]   = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-    hw["food_red"]    = LED(config.PIN_FOOD_LED_RED)
-    hw["food_green"]  = LED(config.PIN_FOOD_LED_GREEN)
-    hw["ldr"]         = MCP3008(channel=config.MCP3008_LDR_CHANNEL)
-    hw["food"]        = MCP3008(channel=config.MCP3008_FOOD_CHANNEL)
+    hw["dht"]         = hardware.make_dht()
+    hw["fan"]         = hardware.make_relay("fan", config.PIN_FAN_RELAY, "fan")
+    hw["water_low"]   = hardware.make_water_switch("water_low",  config.PIN_WATER_LOW)
+    hw["water_mid"]   = hardware.make_water_switch("water_mid",  config.PIN_WATER_MID)
+    hw["water_high"]  = hardware.make_water_switch("water_high", config.PIN_WATER_HIGH)
+    hw["water_red"]   = hardware.make_led("water", config.PIN_WATER_LED_RED,    "water_red")
+    hw["water_yellow"]= hardware.make_led("water", config.PIN_WATER_LED_YELLOW, "water_yellow")
+    hw["water_green"] = hardware.make_led("water", config.PIN_WATER_LED_GREEN,  "water_green")
+    hw["door_motor"]  = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2)
+    hw["limit_open"]  = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)
+    hw["limit_closed"]= hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED)
+    hw["coop_light"]  = hardware.make_relay("lights", config.PIN_COOP_LIGHT_RELAY, "coop_light")
+    hw["run_light"]   = hardware.make_relay("lights", config.PIN_RUN_LIGHT_RELAY,  "run_light")
+    hw["food_red"]    = hardware.make_led("food", config.PIN_FOOD_LED_RED,   "food_red")
+    hw["food_green"]  = hardware.make_led("food", config.PIN_FOOD_LED_GREEN, "food_green")
+    hw["ldr"]         = hardware.make_adc(config.MCP3008_LDR_CHANNEL)
+    hw["food"]        = hardware.make_adc(config.MCP3008_FOOD_CHANNEL)
 
     return hw
 

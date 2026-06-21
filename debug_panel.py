@@ -3,38 +3,33 @@
 # Open http://<pi-ip>:5000 from any device on your network
 # Don't run this at the same time as coop_controller.py
 
-import os
 import time
-import board
-import busio
-import adafruit_dht
-from adafruit_pca9685 import PCA9685
-from gpiozero import Device, Motor, Button, LED, OutputDevice, MCP3008
-from gpiozero.pins.lgpio import LGPIOFactory
+import logging
 from flask import Flask, jsonify, render_template_string
-import config
 
-if os.environ.get("GPIOZERO_PIN_FACTORY", "lgpio") == "lgpio":
-    Device.pin_factory = LGPIOFactory()
+import config
+import hardware
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.getLogger("coop.hw").info(hardware.mode_banner())
 
 app = Flask(__name__)
 
-i2c = busio.I2C(board.SCL, board.SDA)
-pca = PCA9685(i2c)
+pca = hardware.make_pca()
 pca.frequency = 60
 
-dht          = adafruit_dht.DHT22(board.D4)
-fan          = OutputDevice(config.PIN_FAN_RELAY,        active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-door_motor   = Motor(forward=config.PIN_DOOR_IN1,        backward=config.PIN_DOOR_IN2)
-coop_light   = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-run_light    = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
-water_low    = Button(config.PIN_WATER_LOW,  pull_up=False)
-water_mid    = Button(config.PIN_WATER_MID,  pull_up=False)
-water_high   = Button(config.PIN_WATER_HIGH, pull_up=False)
-limit_open   = Button(config.PIN_DOOR_LIMIT_OPEN,   pull_up=True)
-limit_closed = Button(config.PIN_DOOR_LIMIT_CLOSED, pull_up=True)
-ldr          = MCP3008(channel=config.MCP3008_LDR_CHANNEL)
-food_pot     = MCP3008(channel=config.MCP3008_FOOD_CHANNEL)
+dht          = hardware.make_dht()
+fan          = hardware.make_relay("fan",    config.PIN_FAN_RELAY, "fan")
+door_motor   = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2)
+coop_light   = hardware.make_relay("lights", config.PIN_COOP_LIGHT_RELAY, "coop_light")
+run_light    = hardware.make_relay("lights", config.PIN_RUN_LIGHT_RELAY,  "run_light")
+water_low    = hardware.make_water_switch("water_low",  config.PIN_WATER_LOW)
+water_mid    = hardware.make_water_switch("water_mid",  config.PIN_WATER_MID)
+water_high   = hardware.make_water_switch("water_high", config.PIN_WATER_HIGH)
+limit_open   = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)
+limit_closed = hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED)
+ldr          = hardware.make_adc(config.MCP3008_LDR_CHANNEL)
+food_pot     = hardware.make_adc(config.MCP3008_FOOD_CHANNEL)
 
 state = {
     "vents_open": False,
@@ -147,7 +142,7 @@ def run_light_off():
 @app.route("/api/log")
 def api_log():
     try:
-        with open("/home/pi/coop.log") as f:
+        with open(config.LOG_PATH) as f:
             lines = f.readlines()[-50:]
         return jsonify({"lines": [l.rstrip() for l in lines]})
     except FileNotFoundError:
