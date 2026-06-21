@@ -12,7 +12,8 @@ import os
 SIM_ALL = False
 
 SIM = {
-    "pca":    True,   # vent servos (PCA9685 over I2C)
+    "pca":    True,   # vent servos: simulated until the Arduino arrives, then
+                      # set False -> routes to the Arduino (ARDUINO['servos'] below)
     "dht":    True,   # DHT22 temp / humidity sensor
     "fan":    True,   # fan relay
     "water":  True,   # water-level float switches + red/yellow/green LEDs
@@ -39,7 +40,8 @@ SIM_DOOR_TRAVEL_S = 2.0
 #   else arduino? -> see ARDUINO below
 #   else native Pi hardware
 ARDUINO = {
-    "servos": True,   # 'pca' subsystem -> MG995 vent servos on the Arduino
+    "servos": True,   # servos go through the Arduino + PCA9685 shield (isolates
+                      # servo noise from the Pi; Pi only talks USB serial)
     "adc":    True,   # 'adc' subsystem -> LDR + food pot on the Arduino's analog pins
     "dht":    True,   # 'dht' subsystem -> DHT22 read by the Arduino
 }
@@ -113,3 +115,30 @@ DOOR_ACTUATOR_TIMEOUT    = 30  # seconds before giving up if limit switch isn't 
 FOOD_LOW_THRESHOLD = 0.25
 
 POLL_INTERVAL = 10  # seconds
+
+
+# ── Auto-detected hardware overrides ──────────────────────────────────────
+# detect_hardware.py probes what's actually connected and writes
+# detected_hardware.json. If that file exists, apply its overrides on top of
+# the manual flags above. Delete the file to return to fully manual control.
+def _apply_detected_overrides():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "detected_hardware.json")
+    if not os.path.exists(path):
+        return
+    import json
+    try:
+        with open(path) as f:
+            ov = json.load(f).get("overrides", {})
+    except (ValueError, OSError):
+        return
+    global SIM_ALL, ARDUINO_PORT
+    if "SIM_ALL" in ov:
+        SIM_ALL = ov["SIM_ALL"]
+    if "ARDUINO_PORT" in ov:
+        ARDUINO_PORT = ov["ARDUINO_PORT"]
+    SIM.update(ov.get("SIM", {}))
+    ARDUINO.update(ov.get("ARDUINO", {}))
+
+
+_apply_detected_overrides()
