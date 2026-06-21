@@ -1,4 +1,5 @@
 # PCA9685 — same board as the workshop vac system
+# Servos: MG995 DIGI HI-SPEED (metal gear, same pulse range as MG996R)
 SERVOMIN = 150
 SERVOMAX = 325
 
@@ -7,6 +8,11 @@ SERVO_VENT2_CHANNEL = 1
 
 SERVO_VENT_OPEN  = SERVOMAX
 SERVO_VENT_CLOSE = SERVOMIN  # swap these two if the vent moves the wrong way
+
+# Relay polarity — SONGLE SLA-05VDC-SL-C (direct-drive board, no optocoupler)
+# HIGH = relay energized = load ON
+# If you swap to an optocoupler module (active-LOW), set this to False
+RELAY_ACTIVE_HIGH = True
 
 # GPIO pins (BCM)
 PIN_DHT22             = 4

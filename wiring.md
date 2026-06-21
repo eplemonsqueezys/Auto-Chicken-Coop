@@ -93,7 +93,7 @@ PCA9685 default address is 0x40; address pins A0–A5 can be soldered to change 
 
 ---
 
-## Servos (MG996R) via PCA9685
+## Servos (MG995 DIGI HI-SPEED) via PCA9685
 
 Each servo has 3 wires. Connect to the PCA9685 servo header for the assigned channel.
 
@@ -172,7 +172,7 @@ DHT22 pin 4 (GND)  → GND
 
 ---
 
-## Fan Relay
+## Fan Relay (SONGLE SLA-05VDC-SL-C)
 
 ```
 Relay IN   → GPIO17
@@ -183,7 +183,8 @@ Relay NO   → 12V fan positive
 Fan GND    → 12V PSU −
 ```
 
-Active LOW: Pi drives IN LOW to switch fan ON (same as your workshop relay modules).
+Active HIGH: Pi drives IN HIGH to energize relay and switch fan ON.
+(SLA-05VDC-SL-C is a direct-drive board — no optocoupler. HIGH = ON.)
 
 ---
 
@@ -222,7 +223,7 @@ Code uses internal pull-ups. Switch closes to GND when physically triggered → 
 
 ---
 
-## Light Relays (×2)
+## Light Relays (×2, SONGLE SLA-05VDC-SL-C)
 
 ```
 Relay 1 IN   → GPIO19 (coop interior lights)
@@ -234,6 +235,8 @@ Relay 1 NO   → 12V LED strip A (coop)
 Relay 2 NO   → 12V LED strip B (run)
 Both strip − → 12V PSU −
 ```
+
+Active HIGH — same as fan relay. HIGH = lights on.
 
 ---
 

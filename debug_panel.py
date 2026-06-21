@@ -24,10 +24,10 @@ pca = PCA9685(i2c)
 pca.frequency = 60
 
 dht          = adafruit_dht.DHT22(board.D4)
-fan          = OutputDevice(config.PIN_FAN_RELAY,        active_high=False, initial_value=False)
+fan          = OutputDevice(config.PIN_FAN_RELAY,        active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
 door_motor   = Motor(forward=config.PIN_DOOR_IN1,        backward=config.PIN_DOOR_IN2)
-coop_light   = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=False, initial_value=False)
-run_light    = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=False, initial_value=False)
+coop_light   = OutputDevice(config.PIN_COOP_LIGHT_RELAY, active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
+run_light    = OutputDevice(config.PIN_RUN_LIGHT_RELAY,  active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)
 water_low    = Button(config.PIN_WATER_LOW,  pull_up=False)
 water_mid    = Button(config.PIN_WATER_MID,  pull_up=False)
 water_high   = Button(config.PIN_WATER_HIGH, pull_up=False)

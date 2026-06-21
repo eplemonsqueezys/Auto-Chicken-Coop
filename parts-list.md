@@ -43,10 +43,10 @@
 
 | Qty | Part | Notes |
 |-----|------|-------|
-| 2 | MG996R high-torque servo | Metal gear; 11 kg·cm — enough for vent sliders |
+| 2 | MG995 DIGI HI-SPEED servo | Metal gear; 8.5 kg·cm — enough for vent sliders |
 | — | Servo extension cables (30cm) | Routing flexibility |
 
-> Pi GPIO is 3.3V signal; MG996R signal line works fine at 3.3V even though the servo itself runs on 5V.
+> Pi GPIO is 3.3V signal; MG995 signal line works fine at 3.3V even though the servo itself runs on 5V.
 
 ---
 
@@ -55,7 +55,7 @@
 | Qty | Part | Notes |
 |-----|------|-------|
 | 1 | 120mm PC case fan, 12V | Circulates air when temp threshold hit |
-| 1 | 5V single-channel relay module | Pi GPIO triggers it |
+| 1 | SONGLE SLA-05VDC-SL-C relay module (30A) | Pi GPIO triggers it |
 
 ---
 
@@ -89,7 +89,7 @@
 |-----|------|-------|
 | 1 | 12V warm white LED strip, 2–3m | Interior coop |
 | 1 | 12V warm white LED strip, 3–5m | Run/outdoor |
-| 2 | 5V single-channel relay module | One per light circuit |
+| 2 | SONGLE SLA-05VDC-SL-C relay module (30A) | One per light circuit |
 
 ---
 
@@ -121,10 +121,10 @@
 
 | System | Key Components |
 |--------|----------------|
-| Controller | Raspberry Pi 4, MCP3008 ADC |
+| Controller | Raspberry Pi 5, MCP3008 ADC |
 | Power | 12V/5A PSU, buck converter |
 | Temperature | DHT22 |
-| Vent sliders | 2× MG996R servo |
+| Vent sliders | 2× MG995 servo |
 | Fan | 120mm 12V fan, relay |
 | Water level | 3× float switch, 3× LED |
 | Chicken door | Linear actuator, L298N driver, 2× limit switch, LDR via MCP3008 |
