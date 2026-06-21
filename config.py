@@ -12,15 +12,16 @@ import os
 SIM_ALL = False
 
 SIM = {
-    "pca":    True,   # vent servos: simulated until the Arduino arrives, then
-                      # set False -> routes to the Arduino (ARDUINO['servos'] below)
-    "dht":    True,   # DHT22 temp / humidity sensor
-    "fan":    True,   # fan relay
-    "water":  True,   # water-level float switches + red/yellow/green LEDs
-    "door":   False,  # door motor (L298N) + limit switches  -> REAL (testing now)
-    "lights": True,   # coop + run light relays
-    "food":   True,   # food-level LEDs
-    "adc":    True,   # MCP3008 ADC (LDR light sensor + food-level pot)
+    "pca":    False,  # vent servos -> Arduino + PCA9685 shield (ARDUINO['servos']).
+                      # Falls back to simulation automatically if the Arduino isn't
+                      # plugged in, so this is safe to leave False.
+    "dht":    True,   # DHT22 -> simulated; flip False once wired to the Arduino (D2)
+    "fan":    True,   # fan relay -> simulated until wired
+    "water":  True,   # water float switches + LEDs -> simulated until wired
+    "door":   False,  # door motor (L298N) on the Pi -> REAL (tested)
+    "lights": True,   # coop + run light relays -> simulated until wired
+    "food":   True,   # food-level LEDs -> simulated until wired
+    "adc":    True,   # LDR + food pot -> simulated; flip False once wired to Arduino
 }
 
 # Where logs are written (and read by the debug panel). Kept inside the project

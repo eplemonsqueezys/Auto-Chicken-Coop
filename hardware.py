@@ -253,8 +253,13 @@ def make_pca():
     if use_sim("pca"):
         return MockPCA9685()
     if via_arduino("servos"):
-        import arduino_link
-        return arduino_link.ArduinoServoDriver()
+        try:
+            import arduino_link
+            return arduino_link.ArduinoServoDriver()
+        except Exception as e:
+            log.warning(f"[ARDUINO] servo driver unavailable ({e}); SIMULATING servos. "
+                        f"Plug in the Arduino (or run detect_hardware.py) to enable them.")
+            return MockPCA9685()
     import board
     import busio
     from adafruit_pca9685 import PCA9685
@@ -265,8 +270,12 @@ def make_dht():
     if use_sim("dht"):
         return MockDHT22()
     if via_arduino("dht"):
-        import arduino_link
-        return arduino_link.ArduinoDHT()
+        try:
+            import arduino_link
+            return arduino_link.ArduinoDHT()
+        except Exception as e:
+            log.warning(f"[ARDUINO] DHT unavailable ({e}); SIMULATING temp/humidity.")
+            return MockDHT22()
     import board
     import adafruit_dht
     return adafruit_dht.DHT22(board.D4)
@@ -316,8 +325,12 @@ def make_adc(channel):
     if use_sim("adc"):
         return MockADC(channel)
     if via_arduino("adc"):
-        import arduino_link
-        return arduino_link.ArduinoADC(channel)
+        try:
+            import arduino_link
+            return arduino_link.ArduinoADC(channel)
+        except Exception as e:
+            log.warning(f"[ARDUINO] ADC unavailable ({e}); SIMULATING analog ch{channel}.")
+            return MockADC(channel)
     _ensure_pin_factory()
     from gpiozero import MCP3008
     return MCP3008(channel=channel)

@@ -39,8 +39,9 @@ def get_link():
     global _link
     with _link_lock:
         if _link is None:
-            _link = ArduinoLink(config.ARDUINO_PORT, config.ARDUINO_BAUD)
-            _link.start()
+            link = ArduinoLink(config.ARDUINO_PORT, config.ARDUINO_BAUD)
+            link.start()          # may raise if pyserial missing or port absent
+            _link = link          # only cache once it's actually open
         return _link
 
 
