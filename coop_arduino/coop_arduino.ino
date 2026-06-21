@@ -83,6 +83,7 @@ void handleCommand(String line) {
   } else if (line.charAt(0) == 'P') {
     Serial.println("PONG");
   }
+  
 }
 
 void report() {
