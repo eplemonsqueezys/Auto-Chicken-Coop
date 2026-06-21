@@ -9,14 +9,14 @@ import os
 #
 # To bring a subsystem online: wire it up, set its flag to False, rerun, and
 # confirm that one piece works while everything else stays simulated.
-SIM_ALL = True
+SIM_ALL = False
 
 SIM = {
     "pca":    True,   # vent servos (PCA9685 over I2C)
     "dht":    True,   # DHT22 temp / humidity sensor
     "fan":    True,   # fan relay
     "water":  True,   # water-level float switches + red/yellow/green LEDs
-    "door":   True,   # door motor (L298N) + open/closed limit switches
+    "door":   False,  # door motor (L298N) + limit switches  -> REAL (testing now)
     "lights": True,   # coop + run light relays
     "food":   True,   # food-level LEDs
     "adc":    True,   # MCP3008 ADC (LDR light sensor + food-level pot)
@@ -28,6 +28,27 @@ LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coop.log")
 
 # How long the simulated door takes to travel between limit switches (seconds).
 SIM_DOOR_TRAVEL_S = 2.0
+
+# ── Arduino co-processor ──────────────────────────────────────────────────
+# An Arduino (over USB serial) can handle the servos and analog sensors instead
+# of the Pi's PCA9685 / MCP3008. For each subsystem below: if its SIM flag above
+# is False AND it is True here, that subsystem is driven via the Arduino. If it's
+# False here, the Pi drives it natively (PCA9685 / MCP3008 / GPIO).
+#
+#   simulated?  -> see SIM above (wins over everything)
+#   else arduino? -> see ARDUINO below
+#   else native Pi hardware
+ARDUINO = {
+    "servos": True,   # 'pca' subsystem -> MG995 vent servos on the Arduino
+    "adc":    True,   # 'adc' subsystem -> LDR + food pot on the Arduino's analog pins
+    "dht":    True,   # 'dht' subsystem -> DHT22 read by the Arduino
+}
+
+ARDUINO_PORT = "/dev/ttyACM0"   # Uno/Nano usually ttyACM0 or ttyUSB0; check `ls /dev/tty*`
+ARDUINO_BAUD = 115200
+
+# Arduino analog pins are 10-bit (0-1023). Used to normalize LDR/food to 0.0-1.0.
+ARDUINO_ADC_MAX = 1023
 
 # PCA9685 — same board as the workshop vac system
 # Servos: MG995 DIGI HI-SPEED (metal gear, same pulse range as MG996R)

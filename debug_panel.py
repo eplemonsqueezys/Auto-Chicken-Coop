@@ -121,6 +121,23 @@ def door_close():
 @app.route("/api/door/stop")
 def door_stop():
     door_motor.stop()
+    state["door_open"] = None
+    return jsonify({"ok": True})
+
+# --- Motor jog (manual test) -------------------------------------------------
+# Non-blocking: just start/stop the motor. Use these to bench-test the L298N +
+# motor before the limit switches are wired. Hold the button to run; release to
+# stop. Does NOT wait on limit switches, so nothing blocks for 30s.
+@app.route("/api/door/jog/forward")
+def door_jog_forward():
+    door_motor.forward()
+    state["door_open"] = None
+    return jsonify({"ok": True})
+
+@app.route("/api/door/jog/backward")
+def door_jog_backward():
+    door_motor.backward()
+    state["door_open"] = None
     return jsonify({"ok": True})
 
 @app.route("/api/coop_light/on")
@@ -227,6 +244,12 @@ HTML = """<!DOCTYPE html>
       <button class="off"  onclick="cmd('/api/door/close')">Close</button>
       <button class="stop" onclick="cmd('/api/door/stop')">Stop</button>
     </div>
+    <div class="row" style="margin-top:10px"><span>Motor jog (hold)</span></div>
+    <div class="btns">
+      <button class="act"  id="jog-fwd">▲ Forward</button>
+      <button class="act"  id="jog-bwd">▼ Backward</button>
+    </div>
+    <p class="foot">Hold to run, release to stop. For bench-testing the motor before limit switches are wired.</p>
   </div>
 
   <div class="card yellow">
@@ -311,6 +334,20 @@ async function loadLog() {
   box.scrollTop = box.scrollHeight;
 }
 
+// Hold-to-run jog: start motor on press, stop on release/leave.
+function holdJog(btnId, dir) {
+  const btn = document.getElementById(btnId);
+  const start = e => { e.preventDefault(); fetch('/api/door/jog/' + dir); };
+  const stop  = e => { e.preventDefault(); fetch('/api/door/stop').then(loadState); };
+  btn.addEventListener('mousedown', start);
+  btn.addEventListener('mouseup', stop);
+  btn.addEventListener('mouseleave', stop);
+  btn.addEventListener('touchstart', start);
+  btn.addEventListener('touchend', stop);
+}
+holdJog('jog-fwd', 'forward');
+holdJog('jog-bwd', 'backward');
+
 loadSensors(); loadState(); loadLog();
 setInterval(() => { loadSensors(); loadState(); }, 5000);
 </script>
@@ -323,4 +360,4 @@ def index():
 
 if __name__ == "__main__":
     print(f"http://0.0.0.0:5000  —  your Pi's IP: run 'hostname -I'")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

@@ -55,6 +55,11 @@ def use_sim(component):
     return config.SIM.get(component, False)
 
 
+def via_arduino(key):
+    """True if this subsystem should be driven by the Arduino co-processor."""
+    return getattr(config, "ARDUINO", {}).get(key, False)
+
+
 def _sim_values():
     """Read sim_state.json fresh each call; fall back to defaults."""
     vals = dict(_SIM_DEFAULTS)
@@ -74,7 +79,9 @@ def mode_banner():
         return "SIMULATION MODE — all hardware simulated (config.SIM_ALL = True)"
     sim = [k for k in config.SIM if config.SIM[k]]
     real = [k for k in config.SIM if not config.SIM[k]]
-    return f"MIXED MODE — real: {real or 'none'} | simulated: {sim or 'none'}"
+    ard = [k for k, v in getattr(config, "ARDUINO", {}).items() if v]
+    return (f"MIXED MODE — real: {real or 'none'} | simulated: {sim or 'none'} "
+            f"| via Arduino: {ard or 'none'}")
 
 
 # ── gpiozero pin factory (only set up when we actually touch real GPIO) ─────
@@ -241,9 +248,13 @@ class MockLimitSwitch:
 
 # ── factories ──────────────────────────────────────────────────────────────
 def make_pca():
-    """PCA9685 servo driver (vents). Caller sets .frequency afterwards."""
+    """Servo driver (vents). Mock, Arduino, or real PCA9685.
+    Caller sets .frequency afterwards (a no-op on the Arduino backend)."""
     if use_sim("pca"):
         return MockPCA9685()
+    if via_arduino("servos"):
+        import arduino_link
+        return arduino_link.ArduinoServoDriver()
     import board
     import busio
     from adafruit_pca9685 import PCA9685
@@ -253,6 +264,9 @@ def make_pca():
 def make_dht():
     if use_sim("dht"):
         return MockDHT22()
+    if via_arduino("dht"):
+        import arduino_link
+        return arduino_link.ArduinoDHT()
     import board
     import adafruit_dht
     return adafruit_dht.DHT22(board.D4)
@@ -301,6 +315,9 @@ def make_limit(which, pin):
 def make_adc(channel):
     if use_sim("adc"):
         return MockADC(channel)
+    if via_arduino("adc"):
+        import arduino_link
+        return arduino_link.ArduinoADC(channel)
     _ensure_pin_factory()
     from gpiozero import MCP3008
     return MCP3008(channel=channel)
