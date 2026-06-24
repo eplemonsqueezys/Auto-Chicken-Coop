@@ -5,10 +5,11 @@
 
 import time
 import logging
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 import config
 import hardware
+import coop_controller as cc   # reuse the real vent/fan automation logic
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logging.getLogger("coop.hw").info(hardware.mode_banner())
@@ -39,16 +40,37 @@ state = {
     "run_light":  False,
 }
 
+# Climate control: a settable test temperature (no real DHT yet) plus the live
+# thresholds. cc.update_vents_and_fan() runs the SAME automation as the main
+# controller, driving the servos + fan through these objects.
+climate = {"temp": 22.0}
+_hw_climate = {"pca": pca, "fan": fan}
+
+_THRESHOLD_KEYS = {
+    "vent_open":  "TEMP_VENT_OPEN",
+    "vent_close": "TEMP_VENT_CLOSE",
+    "fan_on":     "TEMP_FAN_ON",
+    "fan_off":    "TEMP_FAN_OFF",
+}
+
+def run_climate_logic():
+    """Apply the vent/fan automation at the current test temperature."""
+    cc.update_vents_and_fan(_hw_climate, state, climate["temp"])
+
 def set_servo(channel, pulse):
     pca.channels[channel].duty_cycle = int(pulse * 65535 / 4096)
 
 def read_sensors():
     data = {}
     try:
-        data["temp_c"]   = round(dht.temperature or 0, 1)
-        data["humidity"] = round(dht.humidity or 0, 1)
+        t = dht.temperature
+        h = dht.humidity
+        # No real DHT wired -> reading is None; fall back to the test temperature.
+        data["temp_c"]   = round(t, 1) if t is not None else round(climate["temp"], 1)
+        data["humidity"] = round(h, 1) if h is not None else None
     except Exception:
-        data["temp_c"] = data["humidity"] = None
+        data["temp_c"] = climate["temp"]
+        data["humidity"] = None
 
     data["light_level"] = round(ldr.value, 2)
     data["food_level"]  = round(food_pot.value, 2)
@@ -65,6 +87,37 @@ def api_sensors():
 @app.route("/api/state")
 def api_state():
     return jsonify(state)
+
+@app.route("/api/climate")
+def api_climate():
+    return jsonify({
+        "temp": round(climate["temp"], 1),
+        "thresholds": {k: getattr(config, attr) for k, attr in _THRESHOLD_KEYS.items()},
+        "vents_open": state["vents_open"],
+        "fan_on": state["fan_on"],
+    })
+
+@app.route("/api/climate/temp")
+def api_climate_temp():
+    try:
+        climate["temp"] = float(request.args.get("value"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad temperature value"})
+    run_climate_logic()
+    return jsonify({"ok": True, "vents_open": state["vents_open"], "fan_on": state["fan_on"]})
+
+@app.route("/api/climate/threshold")
+def api_climate_threshold():
+    key = request.args.get("key")
+    if key not in _THRESHOLD_KEYS:
+        return jsonify({"ok": False, "error": "unknown threshold"})
+    try:
+        val = float(request.args.get("value"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad value"})
+    setattr(config, _THRESHOLD_KEYS[key], val)   # live for this session
+    run_climate_logic()
+    return jsonify({"ok": True})
 
 @app.route("/api/vents/open")
 def vents_open():
@@ -201,6 +254,9 @@ HTML = """<!DOCTYPE html>
   .log p { white-space: pre-wrap; word-break: break-all; }
   .foot { font-size: 11px; color: #555; margin-top: 8px; }
   #ts { color: #3498db; }
+  .slider { width: 100%; margin: 10px 0; accent-color: #2ecc71; }
+  .thr { width: 72px; background: #0d1526; color: #7fbbff; border: 1px solid #2a3a5c;
+         border-radius: 4px; padding: 4px 6px; text-align: right; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -216,6 +272,18 @@ HTML = """<!DOCTYPE html>
     <div class="row"><span>Water</span><span class="val" id="water">—</span></div>
     <div class="row"><span>Limit open</span><span class="val" id="lim-open">—</span></div>
     <div class="row"><span>Limit closed</span><span class="val" id="lim-closed">—</span></div>
+  </div>
+
+  <div class="card green">
+    <h2>Climate Control</h2>
+    <div class="row"><span>Test temp</span><span class="val" id="cl-temp">—</span></div>
+    <input type="range" id="cl-slider" class="slider" min="0" max="45" step="0.5">
+    <div class="row"><span>Vent open &ge;</span><input class="thr" id="thr-vent_open" type="number" step="0.5"></div>
+    <div class="row"><span>Vent close &le;</span><input class="thr" id="thr-vent_close" type="number" step="0.5"></div>
+    <div class="row"><span>Fan on &ge;</span><input class="thr" id="thr-fan_on" type="number" step="0.5"></div>
+    <div class="row"><span>Fan off &le;</span><input class="thr" id="thr-fan_off" type="number" step="0.5"></div>
+    <div class="btns"><button class="act" id="thr-save">Save thresholds</button></div>
+    <p class="foot">Drag the temp to watch vents &amp; fan react. Thresholds apply live (reset on restart).</p>
   </div>
 
   <div class="card green">
@@ -334,6 +402,35 @@ async function loadLog() {
   box.scrollTop = box.scrollHeight;
 }
 
+async function loadClimate() {
+  const c = await fetch('/api/climate').then(r => r.json()).catch(() => null);
+  if (!c) return;
+  document.getElementById('cl-temp').textContent = c.temp + ' °C';
+  const sl = document.getElementById('cl-slider');
+  if (document.activeElement !== sl) sl.value = c.temp;
+  for (const k in c.thresholds) {
+    const el = document.getElementById('thr-' + k);
+    if (el && document.activeElement !== el) el.value = c.thresholds[k];
+  }
+}
+
+let clTimer = null;
+document.getElementById('cl-slider').addEventListener('input', e => {
+  document.getElementById('cl-temp').textContent = e.target.value + ' °C';
+  clearTimeout(clTimer);
+  clTimer = setTimeout(() => {
+    fetch('/api/climate/temp?value=' + e.target.value).then(() => { loadState(); loadSensors(); });
+  }, 120);
+});
+
+document.getElementById('thr-save').addEventListener('click', async () => {
+  for (const k of ['vent_open', 'vent_close', 'fan_on', 'fan_off']) {
+    const v = document.getElementById('thr-' + k).value;
+    await fetch('/api/climate/threshold?key=' + k + '&value=' + v);
+  }
+  loadState(); loadClimate();
+});
+
 // Hold-to-run jog: start motor on press, stop on release/leave.
 function holdJog(btnId, dir) {
   const btn = document.getElementById(btnId);
@@ -348,8 +445,8 @@ function holdJog(btnId, dir) {
 holdJog('jog-fwd', 'forward');
 holdJog('jog-bwd', 'backward');
 
-loadSensors(); loadState(); loadLog();
-setInterval(() => { loadSensors(); loadState(); }, 5000);
+loadSensors(); loadState(); loadLog(); loadClimate();
+setInterval(() => { loadSensors(); loadState(); loadClimate(); }, 5000);
 </script>
 </body>
 </html>"""
