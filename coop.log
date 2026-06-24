@@ -22,3 +22,22 @@
 2026-06-21 14:52:48,092 [INFO] Opening door
 2026-06-21 14:52:48,092 [INFO] [SIM] door motor FORWARD (opening)
 2026-06-21 14:52:50,174 [INFO] [SIM] door motor STOP (door now 'open')
+2026-06-24 20:32:03,199 [INFO] SIMULATION MODE — all hardware simulated (config.SIM_ALL = True)
+2026-06-24 20:32:03,200 [INFO] [SIM] PCA9685 created
+2026-06-24 20:32:03,200 [INFO] [SIM] PCA9685 frequency=60Hz
+2026-06-24 20:32:03,200 [INFO] [SIM] servo ch0 duty_cycle=5199 (~324 pulse)
+2026-06-24 20:32:03,200 [INFO] [SIM] servo ch1 duty_cycle=5199 (~324 pulse)
+2026-06-24 20:32:04,207 [INFO] [SIM] servo ch0 duty_cycle=2399 (~149 pulse)
+2026-06-24 20:32:04,208 [INFO] [SIM] servo ch1 duty_cycle=2399 (~149 pulse)
+2026-06-24 20:32:05,216 [INFO] [SIM] water_red OFF
+2026-06-24 20:32:05,216 [INFO] [SIM] water_yellow OFF
+2026-06-24 20:32:05,217 [INFO] [SIM] water_green OFF
+2026-06-24 20:32:05,218 [INFO] [SIM] water_yellow ON
+2026-06-24 20:32:05,220 [INFO] Opening door
+2026-06-24 20:32:05,220 [INFO] [SIM] door motor FORWARD (opening)
+2026-06-24 20:32:07,301 [INFO] [SIM] door motor STOP (door now 'open')
+2026-06-24 20:32:07,302 [INFO] [SIM] coop_light ON
+2026-06-24 20:32:07,303 [INFO] [SIM] run_light ON
+2026-06-24 20:32:07,303 [INFO] Lights on
+2026-06-24 20:32:07,305 [INFO] [SIM] food_red OFF
+2026-06-24 20:32:07,305 [INFO] [SIM] food_green ON

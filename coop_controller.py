@@ -188,7 +188,9 @@ def main():
         try:
             temp = hw["dht"].temperature
             if temp is not None:
-                log.info(f"Temp: {temp:.1f}C  Humidity: {hw['dht'].humidity:.1f}%")
+                hum = hw["dht"].humidity
+                hum_s = f"{hum:.1f}" if hum is not None else "n/a"
+                log.info(f"Temp: {temp:.1f}C  Humidity: {hum_s}%")
                 update_vents_and_fan(hw, state, temp)
         except RuntimeError:
             pass

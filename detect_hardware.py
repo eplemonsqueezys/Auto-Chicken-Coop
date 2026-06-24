@@ -89,7 +89,7 @@ def probe_arduino(port, baud=115200):
         import serial
     except ImportError:
         return None  # pyserial not installed
-    result = {"responds": False, "streaming": False}
+    result = {"responds": False, "streaming": False, "sample": None}
     try:
         ser = serial.Serial(port, baud, timeout=1)
     except Exception:
@@ -108,7 +108,8 @@ def probe_arduino(port, baud=115200):
             if line.startswith("SENS"):
                 result["streaming"] = True
                 result["responds"] = True  # it's clearly our sketch
-            if result["responds"] and result["streaming"]:
+                result["sample"] = line    # keep a frame to judge if sensors are wired
+            if result["responds"] and result["sample"]:
                 break
     finally:
         ser.close()
@@ -116,7 +117,8 @@ def probe_arduino(port, baud=115200):
 
 
 def detect_arduino():
-    info = {"present": False, "port": None, "responds": False, "streaming": False}
+    info = {"present": False, "port": None, "responds": False,
+            "streaming": False, "sample": None}
     for port in candidate_serial_ports():
         info["present"] = True
         probe = probe_arduino(port)
@@ -124,10 +126,26 @@ def detect_arduino():
             info["port"] = info["port"] or port  # pyserial missing; note the port
             continue
         if probe["responds"]:
-            info.update(port=port, responds=True, streaming=probe["streaming"])
+            info.update(port=port, responds=True,
+                        streaming=probe["streaming"], sample=probe.get("sample"))
             return info
         info["port"] = info["port"] or port
     return info
+
+
+def _temp_is_real(sample):
+    """True if a SENS frame carries a valid (non-nan) temperature, i.e. a DHT is
+    actually wired. The sketch streams 'nan' when no DHT is connected."""
+    if not sample:
+        return False
+    parts = sample.split()
+    if len(parts) < 2 or parts[1].lower() == "nan":
+        return False
+    try:
+        float(parts[1])
+        return True
+    except ValueError:
+        return False
 
 
 # ── decide configuration ────────────────────────────────────────────────────
@@ -155,25 +173,30 @@ def decide(i2c, spi, ard):
         sim["pca"] = True
         notes.append("Servos -> SIMULATED (no PCA9685 on I2C, no Arduino).")
 
-    # --- Sensors (ADC + DHT): only positively known via the Arduino sketch ---
-    if ard["streaming"]:
-        sim["adc"] = False
-        arduino["adc"] = True
+    # --- DHT: enable via Arduino only if a REAL temperature is coming back.
+    #     The sketch streams "nan" when no DHT is wired, so streaming alone
+    #     is not enough — that would feed the vent logic bogus readings.
+    if ard["streaming"] and _temp_is_real(ard.get("sample")):
         sim["dht"] = False
         arduino["dht"] = True
         port = ard["port"]
         any_real = True
-        notes.append("LDR/food + DHT22 -> Arduino (it's streaming SENS frames).")
+        notes.append("DHT22 -> Arduino (a valid temperature is being reported).")
+    elif ard["streaming"]:
+        notes.append("Arduino is streaming but temperature reads 'nan' — DHT22 not "
+                     "wired (D2). Left SIMULATED; flip SIM['dht']=False once wired.")
+
+    # --- Analog (LDR/food): cannot be auto-detected. A floating analog pin reads
+    #     like a real sensor, so we never auto-enable it — only advise.
+    if ard["streaming"]:
+        notes.append("LDR/food: if wired to the Arduino's A0/A1, set SIM['adc']=False "
+                     "and ARDUINO['adc']=True. Not auto-enabled (floating pins look "
+                     "like real readings).")
+    elif spi:
+        notes.append("SPI bus is ENABLED — if an MCP3008 is wired, set SIM['adc']=False "
+                     "and ARDUINO['adc']=False to use it natively. (Chip can't be confirmed.)")
     else:
-        if spi:
-            notes.append("SPI bus is ENABLED — if an MCP3008 is wired, set "
-                         "SIM['adc']=False and ARDUINO['adc']=False to use it. "
-                         "(Can't confirm the chip in software.)")
-        else:
-            notes.append("SPI bus not enabled — MCP3008 (LDR/food) stays simulated "
-                         "until you enable SPI and wire it.")
-        notes.append("DHT22 can't be auto-detected; leave SIM['dht'] as-is or set "
-                     "False once it's wired to GPIO4.")
+        notes.append("SPI not enabled and no Arduino sensors — LDR/food stay simulated.")
 
     if any_real:
         # Something real exists, so don't stay in full-sim mode.

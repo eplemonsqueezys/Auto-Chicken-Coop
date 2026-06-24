@@ -28,9 +28,16 @@
  *   Arduino USB -> Raspberry Pi
  */
 
+// Set USE_DHT to 1 once a DHT22 is wired to D2 AND you've installed the
+// "DHT sensor library" (+ Adafruit Unified Sensor). Leave 0 to compile with
+// only the Adafruit PWM Servo Driver library — temp/humidity stream as "nan".
+#define USE_DHT 0
+
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+#if USE_DHT
 #include <DHT.h>
+#endif
 
 // --- Servo shield (PCA9685) ---
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
@@ -47,7 +54,9 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 #define DHT_TYPE DHT22
 #define LDR_PIN  A0
 #define FOOD_PIN A1
+#if USE_DHT
 DHT dht(DHT_PIN, DHT_TYPE);
+#endif
 
 unsigned long lastReport = 0;
 const unsigned long REPORT_MS = 300;
@@ -56,7 +65,9 @@ void setup() {
   Serial.begin(115200);
   pwm.begin();
   pwm.setPWMFreq(SERVO_FREQ);
+#if USE_DHT
   dht.begin();
+#endif
   // Park both vent servos closed on boot.
   setServo(0, 0);
   setServo(1, 0);
@@ -87,8 +98,13 @@ void handleCommand(String line) {
 }
 
 void report() {
+#if USE_DHT
   float t = dht.readTemperature();   // Celsius
   float h = dht.readHumidity();
+#else
+  float t = NAN;                     // no DHT compiled in -> report "nan"
+  float h = NAN;
+#endif
   int ldr = analogRead(LDR_PIN);
   int food = analogRead(FOOD_PIN);
 
