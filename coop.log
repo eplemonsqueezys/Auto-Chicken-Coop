@@ -107,3 +107,45 @@
 2026-06-26 01:42:22,014 [INFO] SIMULATION MODE — all hardware simulated (config.SIM_ALL = True)
 2026-06-26 01:42:22,014 [INFO] [SIM] PCA9685 created
 2026-06-26 01:42:22,014 [INFO] [SIM] PCA9685 frequency=60Hz
+2026-06-26 02:12:45,388 [INFO] SIMULATION MODE — all hardware simulated (config.SIM_ALL = True)
+2026-06-26 02:12:45,390 [INFO] [SIM] PCA9685 created
+2026-06-26 02:12:45,390 [INFO] [SIM] PCA9685 frequency=60Hz
+2026-06-26 02:12:45,401 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:45,402 [INFO] [SIM] servo ch0 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:45,402 [INFO] [SIM] servo ch1 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:45,402 [INFO] Vents open (32.0C)
+2026-06-26 02:12:45,402 [INFO] [SIM] fan ON
+2026-06-26 02:12:45,403 [INFO] Fan on (32.0C)
+2026-06-26 02:12:45,403 [INFO] [SIM] servo ch0 duty_cycle=2399 (~149 pulse)
+2026-06-26 02:12:45,403 [INFO] [SIM] servo ch1 duty_cycle=2399 (~149 pulse)
+2026-06-26 02:12:45,403 [INFO] Vents closed (rain)
+2026-06-26 02:12:45,404 [INFO] [SIM] fan OFF
+2026-06-26 02:12:45,404 [INFO] Fan off (rain)
+2026-06-26 02:12:45,404 [INFO] [SIM] servo ch0 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:45,404 [INFO] [SIM] servo ch1 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:45,405 [INFO] Vents open (33.0C)
+2026-06-26 02:12:45,405 [INFO] [SIM] fan ON
+2026-06-26 02:12:45,405 [INFO] Fan on (33.0C)
+2026-06-26 02:12:45,407 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:45,408 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:45,410 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:45,411 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:59,930 [INFO] SIMULATION MODE — all hardware simulated (config.SIM_ALL = True)
+2026-06-26 02:12:59,931 [INFO] [SIM] PCA9685 created
+2026-06-26 02:12:59,931 [INFO] [SIM] PCA9685 frequency=60Hz
+2026-06-26 02:12:59,941 [WARNING] weather fetch failed (<urlopen error Tunnel connection failed: 403 Forbidden>); no data yet
+2026-06-26 02:12:59,941 [INFO] [SIM] servo ch0 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:59,942 [INFO] [SIM] servo ch1 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:59,942 [INFO] Vents open (32.0C)
+2026-06-26 02:12:59,942 [INFO] [SIM] fan ON
+2026-06-26 02:12:59,942 [INFO] Fan on (32.0C)
+2026-06-26 02:12:59,943 [INFO] [SIM] servo ch0 duty_cycle=2399 (~149 pulse)
+2026-06-26 02:12:59,943 [INFO] [SIM] servo ch1 duty_cycle=2399 (~149 pulse)
+2026-06-26 02:12:59,943 [INFO] Vents closed (rain)
+2026-06-26 02:12:59,943 [INFO] [SIM] fan OFF
+2026-06-26 02:12:59,943 [INFO] Fan off (rain)
+2026-06-26 02:12:59,944 [INFO] [SIM] servo ch0 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:59,944 [INFO] [SIM] servo ch1 duty_cycle=9599 (~599 pulse)
+2026-06-26 02:12:59,944 [INFO] Vents open (33.0C)
+2026-06-26 02:12:59,944 [INFO] [SIM] fan ON
+2026-06-26 02:12:59,944 [INFO] Fan on (33.0C)

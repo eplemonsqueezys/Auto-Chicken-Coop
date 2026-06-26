@@ -69,6 +69,19 @@ def init_hardware():
 def update_vents_and_fan(hw, state, temp):
     pca = hw["pca"]
 
+    # Rain override: keep the coop dry — force vents shut and fan off, ignore temp.
+    if config.RAIN_CLOSE_VENTS and weather.rain_expected():
+        if state["vents_open"]:
+            set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_CLOSE)
+            set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_CLOSE)
+            state["vents_open"] = False
+            log.info("Vents closed (rain)")
+        if state["fan_on"]:
+            hw["fan"].off()
+            state["fan_on"] = False
+            log.info("Fan off (rain)")
+        return
+
     if not state["vents_open"] and temp >= config.TEMP_VENT_OPEN:
         set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_OPEN)
         set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_OPEN)

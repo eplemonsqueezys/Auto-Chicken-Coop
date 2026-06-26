@@ -93,6 +93,12 @@ DOOR_CLOSE_AFTER_DUSK_MIN = 30
 # Pull the vent/fan temperature from the web for the location (instead of a DHT).
 USE_WEATHER_TEMP = True
 
+# Rain override: if it's raining now or rain is forecast soon, force the vents
+# CLOSED and the fan OFF (so rain can't blow into the coop), regardless of temp.
+RAIN_CLOSE_VENTS = True
+RAIN_PROBABILITY_THRESHOLD = 50   # % chance within the lookahead counts as "rain expected"
+RAIN_LOOKAHEAD_HOURS = 3          # how far ahead to treat forecast rain as imminent
+
 # Relay polarity — SONGLE SLA-05VDC-SL-C (direct-drive board, no optocoupler)
 # HIGH = relay energized = load ON
 # If you swap to an optocoupler module (active-LOW), set this to False

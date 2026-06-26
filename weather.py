@@ -44,19 +44,47 @@ def local_now():
     return datetime.now()
 
 
+def _precip_prob_next(hourly):
+    """Max precipitation probability from now through RAIN_LOOKAHEAD_HOURS."""
+    try:
+        times = hourly["time"]
+        probs = hourly["precipitation_probability"]
+    except (KeyError, TypeError):
+        return None
+    now = local_now()
+    start = now.replace(minute=0, second=0, microsecond=0)
+    end = now + timedelta(hours=config.RAIN_LOOKAHEAD_HOURS)
+    vals = []
+    for t, p in zip(times, probs):
+        if p is None:
+            continue
+        try:
+            dt = datetime.fromisoformat(t)
+        except ValueError:
+            continue
+        if start <= dt <= end:
+            vals.append(p)
+    return max(vals) if vals else None
+
+
 def _fetch():
     url = _API + "?" + urllib.parse.urlencode({
         "latitude":  config.LATITUDE,
         "longitude": config.LONGITUDE,
-        "current":   "temperature_2m",
+        "current":   "temperature_2m,precipitation,weather_code",
+        "hourly":    "precipitation_probability",
         "daily":     "sunrise,sunset",
         "timezone":  config.TIMEZONE,
         "forecast_days": 1,
     })
     with urllib.request.urlopen(url, timeout=10) as r:
         d = json.load(r)
+    cur = d["current"]
     return {
-        "temp_c":  float(d["current"]["temperature_2m"]),
+        "temp_c":  float(cur["temperature_2m"]),
+        "precip":  float(cur.get("precipitation", 0) or 0),
+        "weather_code": cur.get("weather_code"),
+        "precip_prob_next": _precip_prob_next(d.get("hourly", {})),
         "sunrise": datetime.fromisoformat(d["daily"]["sunrise"][0]),
         "sunset":  datetime.fromisoformat(d["daily"]["sunset"][0]),
         "fetched": datetime.now(),
@@ -114,6 +142,46 @@ def sun_times():
     if d:
         return d["sunrise"], d["sunset"]
     return None, None
+
+
+# Rain detection (with a sim override for testing from the debug panel).
+_sim_rain = None   # None = use real weather; True/False = forced for testing
+
+# WMO weather codes >= 51 are precipitation (drizzle/rain/snow/showers/storm);
+# 0-48 are clear/cloud/fog (no precip).
+def set_sim_rain(value):
+    global _sim_rain
+    _sim_rain = value
+
+
+def rain_expected():
+    """True if it's raining now or rain is forecast within the lookahead window."""
+    if _sim_rain is not None:
+        return _sim_rain
+    d = get_conditions()
+    if not d:
+        return False                      # no data -> don't override
+    if d.get("precip") and d["precip"] > 0:
+        return True
+    code = d.get("weather_code")
+    if code is not None and code >= 51:
+        return True
+    pn = d.get("precip_prob_next")
+    if pn is not None and pn >= config.RAIN_PROBABILITY_THRESHOLD:
+        return True
+    return False
+
+
+def weather_status():
+    d = get_conditions()
+    return {
+        "temp_c": d["temp_c"] if d else None,
+        "precip": d.get("precip") if d else None,
+        "weather_code": d.get("weather_code") if d else None,
+        "precip_prob_next": d.get("precip_prob_next") if d else None,
+        "rain_expected": rain_expected(),
+        "sim_rain": _sim_rain,
+    }
 
 
 def door_window(sunrise=None, sunset=None):

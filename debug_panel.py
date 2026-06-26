@@ -148,12 +148,23 @@ def api_state():
 
 @app.route("/api/climate")
 def api_climate():
+    ws = weather.weather_status()
     return jsonify({
         "temp": round(climate["temp"], 1),
         "thresholds": {k: getattr(config, attr) for k, attr in _THRESHOLD_KEYS.items()},
         "vents_open": state["vents_open"],
         "fan_on": state["fan_on"],
+        "rain_expected": ws["rain_expected"],
+        "sim_rain": ws["sim_rain"],
+        "precip_prob": ws["precip_prob_next"],
     })
+
+@app.route("/api/climate/rain")
+def api_climate_rain():
+    mode = (request.args.get("mode") or "auto").lower()
+    weather.set_sim_rain({"auto": None, "rain": True, "dry": False}.get(mode))
+    run_climate_logic()
+    return jsonify({"ok": True, "rain_expected": weather.rain_expected()})
 
 @app.route("/api/climate/temp")
 def api_climate_temp():
@@ -442,6 +453,13 @@ HTML = """<!DOCTYPE html>
     <div class="row"><span>Test temp</span><span class="val" id="cl-temp">—</span></div>
     <input type="range" id="cl-slider" class="slider" min="0" max="45" step="0.5">
     <div class="btns"><button class="act" id="cl-pull">Pull live temp ({{ zip }})</button></div>
+    <div class="row"><span>Rain</span><span class="val" id="cl-rain">—</span></div>
+    <div class="btns">
+      <button class="act"  onclick="setRain('auto')">Auto</button>
+      <button class="off"  onclick="setRain('rain')">Force rain</button>
+      <button class="on"   onclick="setRain('dry')">Force dry</button>
+    </div>
+    <p class="foot">When rain is detected/forecast, vents are forced shut and the fan off (overrides temperature).</p>
     <div class="row"><span>Vent open &ge;</span><input class="thr" id="thr-vent_open" type="number" step="0.5"></div>
     <div class="row"><span>Vent close &le;</span><input class="thr" id="thr-vent_close" type="number" step="0.5"></div>
     <div class="row"><span>Fan on &ge;</span><input class="thr" id="thr-fan_on" type="number" step="0.5"></div>
@@ -607,6 +625,17 @@ async function loadClimate() {
     const el = document.getElementById('thr-' + k);
     if (el && document.activeElement !== el) el.value = c.thresholds[k];
   }
+  const r = document.getElementById('cl-rain');
+  if (r) {
+    let txt = c.rain_expected ? 'YES — vents forced shut' : 'no';
+    if (c.precip_prob != null) txt += ' (' + c.precip_prob + '% soon)';
+    if (c.sim_rain !== null) txt += ' [sim]';
+    r.textContent = txt;
+    r.className = 'val ' + (c.rain_expected ? 'bad' : 'ok');
+  }
+}
+function setRain(mode) {
+  fetch('/api/climate/rain?mode=' + mode).then(() => { loadClimate(); loadState(); });
 }
 
 let clTimer = null;
