@@ -86,21 +86,21 @@ def update_vents_and_fan(hw, state, temp):
         set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_OPEN)
         set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_OPEN)
         state["vents_open"] = True
-        log.info(f"Vents open ({temp:.1f}C)")
+        log.info(f"Vents open ({temp:.1f}{config.TEMP_UNIT})")
     elif state["vents_open"] and temp <= config.TEMP_VENT_CLOSE:
         set_servo(pca, config.SERVO_VENT1_CHANNEL, config.SERVO_VENT_CLOSE)
         set_servo(pca, config.SERVO_VENT2_CHANNEL, config.SERVO_VENT_CLOSE)
         state["vents_open"] = False
-        log.info(f"Vents closed ({temp:.1f}C)")
+        log.info(f"Vents closed ({temp:.1f}{config.TEMP_UNIT})")
 
     if not state["fan_on"] and temp >= config.TEMP_FAN_ON:
         hw["fan"].on()
         state["fan_on"] = True
-        log.info(f"Fan on ({temp:.1f}C)")
+        log.info(f"Fan on ({temp:.1f}{config.TEMP_UNIT})")
     elif state["fan_on"] and temp <= config.TEMP_FAN_OFF:
         hw["fan"].off()
         state["fan_on"] = False
-        log.info(f"Fan off ({temp:.1f}C)")
+        log.info(f"Fan off ({temp:.1f}{config.TEMP_UNIT})")
 
 
 def update_water_leds(hw):
@@ -244,15 +244,17 @@ def main():
 
         try:
             if config.USE_WEATHER_TEMP:
-                temp = weather.temperature_c()
+                temp = weather.temperature()
                 if temp is not None:
-                    log.info(f"Outdoor temp ({config.LOCATION_ZIP}): {temp:.1f}C")
+                    log.info(f"Outdoor temp ({config.LOCATION_ZIP}): {temp:.1f}{config.TEMP_UNIT}")
             else:
-                temp = hw["dht"].temperature
+                temp = hw["dht"].temperature   # DHT reads Celsius
+                if temp is not None and config.TEMP_UNIT.upper() == "F":
+                    temp = temp * 9 / 5 + 32
                 if temp is not None:
                     hum = hw["dht"].humidity
                     hum_s = f"{hum:.1f}" if hum is not None else "n/a"
-                    log.info(f"Temp: {temp:.1f}C  Humidity: {hum_s}%")
+                    log.info(f"Temp: {temp:.1f}{config.TEMP_UNIT}  Humidity: {hum_s}%")
             if temp is not None:
                 update_vents_and_fan(hw, state, temp)
         except RuntimeError:

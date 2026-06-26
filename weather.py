@@ -4,7 +4,7 @@ Live weather + sun times for the coop, from Open-Meteo (free, no API key).
 
 Provides:
   - local_now()        timezone-aware-ish "now" for config.TIMEZONE (naive local)
-  - temperature_c()    current outdoor temperature in °C for the location
+  - temperature()      current outdoor temperature in config.TEMP_UNIT (°F/°C)
   - sun_times()        today's (sunrise, sunset) as naive local datetimes
   - door_window()      (open_at, close_at) = sunrise+offset, sunset+offset
 
@@ -68,6 +68,7 @@ def _precip_prob_next(hourly):
 
 
 def _fetch():
+    unit = "fahrenheit" if getattr(config, "TEMP_UNIT", "C").upper() == "F" else "celsius"
     url = _API + "?" + urllib.parse.urlencode({
         "latitude":  config.LATITUDE,
         "longitude": config.LONGITUDE,
@@ -75,13 +76,14 @@ def _fetch():
         "hourly":    "precipitation_probability",
         "daily":     "sunrise,sunset",
         "timezone":  config.TIMEZONE,
+        "temperature_unit": unit,
         "forecast_days": 1,
     })
     with urllib.request.urlopen(url, timeout=10) as r:
         d = json.load(r)
     cur = d["current"]
     return {
-        "temp_c":  float(cur["temperature_2m"]),
+        "temp":    float(cur["temperature_2m"]),   # in config.TEMP_UNIT
         "precip":  float(cur.get("precipitation", 0) or 0),
         "weather_code": cur.get("weather_code"),
         "precip_prob_next": _precip_prob_next(d.get("hourly", {})),
@@ -101,8 +103,8 @@ def get_conditions(force=False):
         data = _fetch()
         _cache["data"] = data
         _cache["at"] = time.time()
-        log.info(f"Weather {config.LOCATION_ZIP}: {data['temp_c']:.1f}C  "
-                 f"sunrise {data['sunrise']:%H:%M}  sunset {data['sunset']:%H:%M}")
+        log.info(f"Weather {config.LOCATION_ZIP}: {data['temp']:.1f}{config.TEMP_UNIT}  "
+                 f"sunrise {data['sunrise']:%I:%M %p}  sunset {data['sunset']:%I:%M %p}")
     except Exception as e:
         if _cache["data"]:
             log.warning(f"weather refresh failed ({e}); using cached value")
@@ -132,9 +134,10 @@ def geocode_zip(zipcode, country="us"):
     }
 
 
-def temperature_c():
+def temperature():
+    """Current outdoor temperature in config.TEMP_UNIT (°F or °C)."""
     d = get_conditions()
-    return d["temp_c"] if d else None
+    return d["temp"] if d else None
 
 
 def sun_times():
@@ -175,7 +178,7 @@ def rain_expected():
 def weather_status():
     d = get_conditions()
     return {
-        "temp_c": d["temp_c"] if d else None,
+        "temp": d["temp"] if d else None,
         "precip": d.get("precip") if d else None,
         "weather_code": d.get("weather_code") if d else None,
         "precip_prob_next": d.get("precip_prob_next") if d else None,

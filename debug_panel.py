@@ -48,7 +48,7 @@ state = {
 # Climate control: a settable test temperature (no real DHT yet) plus the live
 # thresholds. cc.update_vents_and_fan() runs the SAME automation as the main
 # controller, driving the servos + fan through these objects.
-climate = {"temp": 22.0}
+climate = {"temp": 72.0}   # in config.TEMP_UNIT (°F)
 _hw_climate = {"pca": pca, "fan": fan}
 
 _THRESHOLD_KEYS = {
@@ -121,11 +121,18 @@ def door_move(target_pulse, opening):
 def read_sensors():
     data = {}
     try:
-        t = dht.temperature
-        h = dht.humidity
-        # No real DHT wired -> reading is None; fall back to the test temperature.
-        data["temp_c"]   = round(t, 1) if t is not None else round(climate["temp"], 1)
-        data["humidity"] = round(h, 1) if h is not None else None
+        # When using web temp (or no real DHT), show the climate value that the
+        # logic actually uses. Otherwise read the DHT (Celsius) and convert to °F.
+        if config.USE_WEATHER_TEMP:
+            data["temp_c"] = round(climate["temp"], 1)
+            data["humidity"] = None
+        else:
+            t = dht.temperature
+            h = dht.humidity
+            if t is not None and config.TEMP_UNIT.upper() == "F":
+                t = t * 9 / 5 + 32
+            data["temp_c"]   = round(t, 1) if t is not None else round(climate["temp"], 1)
+            data["humidity"] = round(h, 1) if h is not None else None
     except Exception:
         data["temp_c"] = climate["temp"]
         data["humidity"] = None
@@ -190,7 +197,7 @@ def api_climate_threshold():
 
 @app.route("/api/climate/pull_temp")
 def api_climate_pull():
-    t = weather.temperature_c()
+    t = weather.temperature()
     if t is None:
         return jsonify({"ok": False, "error": "no weather data (offline?)"})
     climate["temp"] = round(t, 1)
@@ -202,7 +209,7 @@ def api_schedule():
     sunrise, sunset = weather.sun_times()
     open_at, close_at = weather.door_window(sunrise, sunset)
     now = eval_now()
-    fmt = lambda d: d.strftime("%H:%M") if d else "—"
+    fmt = lambda d: d.strftime("%I:%M %p").lstrip("0") if d else "—"
     return jsonify({
         "zip": config.LOCATION_ZIP,
         "now": fmt(now),
@@ -451,7 +458,7 @@ HTML = """<!DOCTYPE html>
   <div class="card green">
     <h2>Climate Control</h2>
     <div class="row"><span>Test temp</span><span class="val" id="cl-temp">—</span></div>
-    <input type="range" id="cl-slider" class="slider" min="0" max="45" step="0.5">
+    <input type="range" id="cl-slider" class="slider" min="30" max="115" step="1">
     <div class="btns"><button class="act" id="cl-pull">Pull live temp ({{ zip }})</button></div>
     <div class="row"><span>Rain</span><span class="val" id="cl-rain">—</span></div>
     <div class="btns">
@@ -570,8 +577,8 @@ async function loadSensors() {
   if (!d) return;
 
   const tempEl = document.getElementById('temp');
-  tempEl.textContent = d.temp_c !== null ? d.temp_c + ' °C' : 'err';
-  tempEl.className = 'val' + (d.temp_c > 30 ? ' bad' : d.temp_c > 27 ? ' warn' : ' ok');
+  tempEl.textContent = d.temp_c !== null ? d.temp_c + ' °F' : 'err';
+  tempEl.className = 'val' + (d.temp_c > 86 ? ' bad' : d.temp_c > 80 ? ' warn' : ' ok');
 
   document.getElementById('humidity').textContent = d.humidity !== null ? d.humidity + '%' : '—';
 
@@ -618,7 +625,7 @@ async function loadLog() {
 async function loadClimate() {
   const c = await fetch('/api/climate').then(r => r.json()).catch(() => null);
   if (!c) return;
-  document.getElementById('cl-temp').textContent = c.temp + ' °C';
+  document.getElementById('cl-temp').textContent = c.temp + ' °F';
   const sl = document.getElementById('cl-slider');
   if (document.activeElement !== sl) sl.value = c.temp;
   for (const k in c.thresholds) {
@@ -640,7 +647,7 @@ function setRain(mode) {
 
 let clTimer = null;
 document.getElementById('cl-slider').addEventListener('input', e => {
-  document.getElementById('cl-temp').textContent = e.target.value + ' °C';
+  document.getElementById('cl-temp').textContent = e.target.value + ' °F';
   clearTimeout(clTimer);
   clTimer = setTimeout(() => {
     fetch('/api/climate/temp?value=' + e.target.value).then(() => { loadState(); loadSensors(); });
@@ -664,7 +671,10 @@ if (clPull) clPull.addEventListener('click', () => {
 });
 
 function hhmm(m) {
-  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  let h = Math.floor(m / 60), mm = m % 60;
+  const ap = h < 12 ? 'AM' : 'PM';
+  let h12 = h % 12; if (h12 === 0) h12 = 12;
+  return h12 + ':' + String(mm).padStart(2, '0') + ' ' + ap;
 }
 async function loadSchedule() {
   const s = await fetch('/api/schedule').then(r => r.json()).catch(() => null);

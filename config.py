@@ -126,11 +126,14 @@ PIN_FOOD_LED_GREEN    = 14
 MCP3008_LDR_CHANNEL  = 0
 MCP3008_FOOD_CHANNEL = 1
 
-# Temperature thresholds (°C) — gap between open/close prevents chatter
-TEMP_VENT_OPEN  = 27.0
-TEMP_VENT_CLOSE = 25.0
-TEMP_FAN_ON     = 30.0
-TEMP_FAN_OFF    = 28.0
+# Temperature unit for thresholds, weather, and display ("F" or "C").
+TEMP_UNIT = "F"
+
+# Temperature thresholds (°F) — gap between open/close prevents chatter
+TEMP_VENT_OPEN  = 80.0   # ~27C
+TEMP_VENT_CLOSE = 76.0   # ~24C
+TEMP_FAN_ON     = 86.0   # ~30C
+TEMP_FAN_OFF    = 82.0   # ~28C
 
 # Light schedule
 LIGHT_ON_HOUR    = 6
