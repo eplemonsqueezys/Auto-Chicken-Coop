@@ -55,14 +55,26 @@ ARDUINO_ADC_MAX = 1023
 
 # PCA9685 — same board as the workshop vac system
 # Servos: MG995 DIGI HI-SPEED (metal gear, same pulse range as MG996R)
+# Pulse-length counts out of 4096 at 60Hz. 150..600 is ~full MG995 travel —
+# a wide sweep for testing. Narrow these later to the real vent/door end stops.
+# These MUST match SERVOMIN/SERVOMAX in coop_arduino/coop_arduino.ino.
 SERVOMIN = 150
-SERVOMAX = 325
+SERVOMAX = 600
 
 SERVO_VENT1_CHANNEL = 0
 SERVO_VENT2_CHANNEL = 1
 
 SERVO_VENT_OPEN  = SERVOMAX
 SERVO_VENT_CLOSE = SERVOMIN  # swap these two if the vent moves the wrong way
+
+# ── Door ──────────────────────────────────────────────────────────────────
+# "servo" -> MG995 on the PCA9685 shield (channel below), driven gradually.
+# "motor" -> L298N + limit switches (the original linear-actuator design).
+DOOR_TYPE = "servo"
+SERVO_DOOR_CHANNEL = 3            # shield "port 3"
+SERVO_DOOR_OPEN  = SERVOMAX       # tweak to the real fully-open spot later
+SERVO_DOOR_CLOSE = SERVOMIN       # tweak to the real fully-closed spot later
+DOOR_SERVO_TRAVEL_S = 5.0         # seconds to sweep open<->closed (tweak in web UI)
 
 # Relay polarity — SONGLE SLA-05VDC-SL-C (direct-drive board, no optocoupler)
 # HIGH = relay energized = load ON

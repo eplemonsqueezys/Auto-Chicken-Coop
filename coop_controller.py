@@ -49,9 +49,12 @@ def init_hardware():
     hw["water_red"]   = hardware.make_led("water", config.PIN_WATER_LED_RED,    "water_red")
     hw["water_yellow"]= hardware.make_led("water", config.PIN_WATER_LED_YELLOW, "water_yellow")
     hw["water_green"] = hardware.make_led("water", config.PIN_WATER_LED_GREEN,  "water_green")
-    hw["door_motor"]  = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2)
-    hw["limit_open"]  = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)
-    hw["limit_closed"]= hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED)
+    if config.DOOR_TYPE == "motor":
+        hw["door_motor"]  = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2)
+        hw["limit_open"]  = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)
+        hw["limit_closed"]= hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED)
+    # DOOR_TYPE == "servo": the door is a servo on hw["pca"] channel
+    # config.SERVO_DOOR_CHANNEL — no motor or limit switches needed.
     hw["coop_light"]  = hardware.make_relay("lights", config.PIN_COOP_LIGHT_RELAY, "coop_light")
     hw["run_light"]   = hardware.make_relay("lights", config.PIN_RUN_LIGHT_RELAY,  "run_light")
     hw["food_red"]    = hardware.make_led("food", config.PIN_FOOD_LED_RED,   "food_red")
@@ -99,8 +102,28 @@ def update_water_leds(hw):
         hw["water_red"].on()
 
 
+def sweep_door_servo(hw, state, target_pulse):
+    """Move the door servo gradually from its current pulse to target_pulse over
+    config.DOOR_SERVO_TRAVEL_S seconds, so the door eases open/shut."""
+    pca = hw["pca"]
+    start = state.get("door_pulse", config.SERVO_DOOR_CLOSE)
+    dur = max(0.1, config.DOOR_SERVO_TRAVEL_S)
+    steps = max(1, int(dur / 0.05))   # ~20 updates/sec
+    for i in range(1, steps + 1):
+        p = start + (target_pulse - start) * i / steps
+        set_servo(pca, config.SERVO_DOOR_CHANNEL, int(p))
+        state["door_pulse"] = p
+        time.sleep(dur / steps)
+    state["door_pulse"] = target_pulse
+
+
 def open_door(hw, state):
     if state["door_open"] is True:
+        return
+    if config.DOOR_TYPE == "servo":
+        log.info("Opening door (servo, gradual)")
+        sweep_door_servo(hw, state, config.SERVO_DOOR_OPEN)
+        state["door_open"] = True
         return
     log.info("Opening door")
     hw["door_motor"].forward()
@@ -116,6 +139,11 @@ def open_door(hw, state):
 
 def close_door(hw, state):
     if state["door_open"] is False:
+        return
+    if config.DOOR_TYPE == "servo":
+        log.info("Closing door (servo, gradual)")
+        sweep_door_servo(hw, state, config.SERVO_DOOR_CLOSE)
+        state["door_open"] = False
         return
     log.info("Closing door")
     hw["door_motor"].backward()
@@ -171,14 +199,18 @@ def update_food_leds(hw):
 
 def main():
     hw = init_hardware()
-    state = {"vents_open": False, "fan_on": False, "door_open": None, "lights_on": False}
+    state = {"vents_open": False, "fan_on": False, "door_open": None,
+             "lights_on": False, "door_pulse": config.SERVO_DOOR_CLOSE}
 
-    if hw["limit_open"].is_active:
-        state["door_open"] = True
-    elif hw["limit_closed"].is_active:
-        state["door_open"] = False
+    if config.DOOR_TYPE == "motor":
+        if hw["limit_open"].is_active:
+            state["door_open"] = True
+        elif hw["limit_closed"].is_active:
+            state["door_open"] = False
+        else:
+            log.warning("Door position unknown at startup")
     else:
-        log.warning("Door position unknown at startup")
+        log.info("Servo door — position set on first dawn/dusk check")
 
     log.info("Running")
 

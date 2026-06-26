@@ -46,8 +46,8 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 // Pulse-length counts (out of 4096) for the servo end stops. These MIRROR
 // SERVOMIN / SERVOMAX in config.py on the Pi — keep the two in sync. Widen
 // toward 150..600 if you want more travel; narrow if the servo strains.
-#define SERVOMIN 150           // angle 0   (vent closed)
-#define SERVOMAX 325           // angle 180 (vent open)
+#define SERVOMIN 150           // angle 0   — ~full travel low end
+#define SERVOMAX 600           // angle 180 — ~full travel high end
 
 // --- Sensors ---
 #define DHT_PIN  2

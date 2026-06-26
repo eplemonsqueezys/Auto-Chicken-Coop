@@ -5,6 +5,7 @@
 
 import time
 import logging
+import threading
 from flask import Flask, jsonify, render_template_string, request
 
 import config
@@ -21,14 +22,15 @@ pca.frequency = 60
 
 dht          = hardware.make_dht()
 fan          = hardware.make_relay("fan",    config.PIN_FAN_RELAY, "fan")
-door_motor   = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2)
 coop_light   = hardware.make_relay("lights", config.PIN_COOP_LIGHT_RELAY, "coop_light")
 run_light    = hardware.make_relay("lights", config.PIN_RUN_LIGHT_RELAY,  "run_light")
 water_low    = hardware.make_water_switch("water_low",  config.PIN_WATER_LOW)
 water_mid    = hardware.make_water_switch("water_mid",  config.PIN_WATER_MID)
 water_high   = hardware.make_water_switch("water_high", config.PIN_WATER_HIGH)
-limit_open   = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)
-limit_closed = hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED)
+# Door: a servo (on the shield) or an L298N motor + limit switches.
+door_motor   = hardware.make_motor(config.PIN_DOOR_IN1, config.PIN_DOOR_IN2) if config.DOOR_TYPE == "motor" else None
+limit_open   = hardware.make_limit("open",   config.PIN_DOOR_LIMIT_OPEN)   if config.DOOR_TYPE == "motor" else None
+limit_closed = hardware.make_limit("closed", config.PIN_DOOR_LIMIT_CLOSED) if config.DOOR_TYPE == "motor" else None
 ldr          = hardware.make_adc(config.MCP3008_LDR_CHANNEL)
 food_pot     = hardware.make_adc(config.MCP3008_FOOD_CHANNEL)
 
@@ -60,6 +62,35 @@ def run_climate_logic():
 def set_servo(channel, pulse):
     pca.channels[channel].duty_cycle = int(pulse * 65535 / 4096)
 
+# Servo-door state: eased open/shut over config.DOOR_SERVO_TRAVEL_S (no limits).
+_door = {"pulse": config.SERVO_DOOR_CLOSE, "moving": False, "stop": False, "thread": None}
+
+def _door_sweep(target_pulse):
+    _door["moving"] = True
+    start = _door["pulse"]
+    dur = max(0.1, config.DOOR_SERVO_TRAVEL_S)
+    steps = max(1, int(dur / 0.05))      # ~20 updates/sec
+    for i in range(1, steps + 1):
+        if _door["stop"]:
+            break
+        p = start + (target_pulse - start) * i / steps
+        _door["pulse"] = p
+        set_servo(config.SERVO_DOOR_CHANNEL, int(p))
+        time.sleep(dur / steps)
+    _door["moving"] = False
+
+def door_move(target_pulse, opening):
+    """Interrupt any current move and start easing toward target_pulse."""
+    _door["stop"] = True
+    t = _door["thread"]
+    if t and t.is_alive():
+        t.join(timeout=2)
+    _door["stop"] = False
+    state["door_open"] = opening
+    th = threading.Thread(target=_door_sweep, args=(target_pulse,), daemon=True)
+    _door["thread"] = th
+    th.start()
+
 def read_sensors():
     data = {}
     try:
@@ -75,8 +106,8 @@ def read_sensors():
     data["light_level"] = round(ldr.value, 2)
     data["food_level"]  = round(food_pot.value, 2)
     data["water"]       = "Full" if water_high.is_active else "Mid" if water_mid.is_active else "Low" if water_low.is_active else "Empty"
-    data["limit_open"]  = limit_open.is_active
-    data["limit_closed"]= limit_closed.is_active
+    data["limit_open"]  = limit_open.is_active   if limit_open   else None
+    data["limit_closed"]= limit_closed.is_active if limit_closed else None
     return data
 
 
@@ -145,8 +176,16 @@ def api_fan_off():
     state["fan_on"] = False
     return jsonify({"ok": True})
 
+@app.route("/api/door")
+def api_door():
+    return jsonify({"type": config.DOOR_TYPE, "travel": config.DOOR_SERVO_TRAVEL_S,
+                    "moving": _door["moving"], "open": state["door_open"]})
+
 @app.route("/api/door/open")
 def door_open():
+    if config.DOOR_TYPE == "servo":
+        door_move(config.SERVO_DOOR_OPEN, True)
+        return jsonify({"ok": True})
     door_motor.forward()
     start = time.time()
     while not limit_open.is_active:
@@ -160,6 +199,9 @@ def door_open():
 
 @app.route("/api/door/close")
 def door_close():
+    if config.DOOR_TYPE == "servo":
+        door_move(config.SERVO_DOOR_CLOSE, False)
+        return jsonify({"ok": True})
     door_motor.backward()
     start = time.time()
     while not limit_closed.is_active:
@@ -173,22 +215,34 @@ def door_close():
 
 @app.route("/api/door/stop")
 def door_stop():
+    if config.DOOR_TYPE == "servo":
+        _door["stop"] = True          # halt an in-progress sweep
+        return jsonify({"ok": True})
     door_motor.stop()
     state["door_open"] = None
     return jsonify({"ok": True})
 
-# --- Motor jog (manual test) -------------------------------------------------
-# Non-blocking: just start/stop the motor. Use these to bench-test the L298N +
-# motor before the limit switches are wired. Hold the button to run; release to
-# stop. Does NOT wait on limit switches, so nothing blocks for 30s.
+@app.route("/api/door/travel")
+def door_travel():
+    try:
+        config.DOOR_SERVO_TRAVEL_S = max(0.1, float(request.args.get("value")))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad value"})
+    return jsonify({"ok": True, "travel": config.DOOR_SERVO_TRAVEL_S})
+
+# --- Motor jog (manual test, "motor" door type only) -------------------------
 @app.route("/api/door/jog/forward")
 def door_jog_forward():
+    if config.DOOR_TYPE != "motor":
+        return jsonify({"ok": False, "error": "servo door — use Open/Close"})
     door_motor.forward()
     state["door_open"] = None
     return jsonify({"ok": True})
 
 @app.route("/api/door/jog/backward")
 def door_jog_backward():
+    if config.DOOR_TYPE != "motor":
+        return jsonify({"ok": False, "error": "servo door — use Open/Close"})
     door_motor.backward()
     state["door_open"] = None
     return jsonify({"ok": True})
@@ -312,12 +366,18 @@ HTML = """<!DOCTYPE html>
       <button class="off"  onclick="cmd('/api/door/close')">Close</button>
       <button class="stop" onclick="cmd('/api/door/stop')">Stop</button>
     </div>
+    {% if door_type == 'servo' %}
+    <div class="row" style="margin-top:10px"><span>Travel time (s)</span><input class="thr" id="door-travel" type="number" step="0.5" min="0.5"></div>
+    <div class="btns"><button class="act" id="door-travel-save">Save time</button></div>
+    <p class="foot">Servo door on channel 3 — eases open/shut over the travel time. Stop halts it mid-move.</p>
+    {% else %}
     <div class="row" style="margin-top:10px"><span>Motor jog (hold)</span></div>
     <div class="btns">
       <button class="act"  id="jog-fwd">▲ Forward</button>
       <button class="act"  id="jog-bwd">▼ Backward</button>
     </div>
     <p class="foot">Hold to run, release to stop. For bench-testing the motor before limit switches are wired.</p>
+    {% endif %}
   </div>
 
   <div class="card yellow">
@@ -431,9 +491,22 @@ document.getElementById('thr-save').addEventListener('click', async () => {
   loadState(); loadClimate();
 });
 
+async function loadDoor() {
+  const d = await fetch('/api/door').then(r => r.json()).catch(() => null);
+  if (!d || d.type !== 'servo') return;
+  const el = document.getElementById('door-travel');
+  if (el && document.activeElement !== el) el.value = d.travel;
+}
+const doorSave = document.getElementById('door-travel-save');
+if (doorSave) doorSave.addEventListener('click', () => {
+  const v = document.getElementById('door-travel').value;
+  fetch('/api/door/travel?value=' + v).then(loadDoor);
+});
+
 // Hold-to-run jog: start motor on press, stop on release/leave.
 function holdJog(btnId, dir) {
   const btn = document.getElementById(btnId);
+  if (!btn) return;                    // servo door has no jog buttons
   const start = e => { e.preventDefault(); fetch('/api/door/jog/' + dir); };
   const stop  = e => { e.preventDefault(); fetch('/api/door/stop').then(loadState); };
   btn.addEventListener('mousedown', start);
@@ -445,15 +518,15 @@ function holdJog(btnId, dir) {
 holdJog('jog-fwd', 'forward');
 holdJog('jog-bwd', 'backward');
 
-loadSensors(); loadState(); loadLog(); loadClimate();
-setInterval(() => { loadSensors(); loadState(); loadClimate(); }, 5000);
+loadSensors(); loadState(); loadLog(); loadClimate(); loadDoor();
+setInterval(() => { loadSensors(); loadState(); loadClimate(); loadDoor(); }, 5000);
 </script>
 </body>
 </html>"""
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    return render_template_string(HTML, door_type=config.DOOR_TYPE)
 
 if __name__ == "__main__":
     print(f"http://0.0.0.0:5000  —  your Pi's IP: run 'hostname -I'")
