@@ -11,6 +11,7 @@ import logging
 
 import config
 import hardware
+import weather
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,9 +159,20 @@ def close_door(hw, state):
 
 
 def update_door(hw, state, now):
+    # Preferred: real sunrise/sunset for the location, open at dawn+offset and
+    # close at dusk+offset. Falls back to the LDR/clock logic if weather is down.
+    if config.USE_SUN_SCHEDULE:
+        should_open = weather.door_should_be_open(now)
+        if should_open is not None:
+            if should_open and state["door_open"] is not True:
+                open_door(hw, state)
+            elif not should_open and state["door_open"] is not False:
+                close_door(hw, state)
+            return
+        log.warning("No sun times available — falling back to LDR for the door")
+
     light = hw["ldr"].value
     hour  = now.hour
-
     is_dawn = light >= config.LDR_DAWN_THRESHOLD or hour >= config.DOOR_OPEN_LATEST_HOUR
     is_dusk = light <= config.LDR_DUSK_THRESHOLD and hour >= config.DOOR_CLOSE_EARLIEST_HOUR
 
@@ -215,14 +227,20 @@ def main():
     log.info("Running")
 
     while True:
-        now = datetime.now()
+        now = weather.local_now()
 
         try:
-            temp = hw["dht"].temperature
+            if config.USE_WEATHER_TEMP:
+                temp = weather.temperature_c()
+                if temp is not None:
+                    log.info(f"Outdoor temp ({config.LOCATION_ZIP}): {temp:.1f}C")
+            else:
+                temp = hw["dht"].temperature
+                if temp is not None:
+                    hum = hw["dht"].humidity
+                    hum_s = f"{hum:.1f}" if hum is not None else "n/a"
+                    log.info(f"Temp: {temp:.1f}C  Humidity: {hum_s}%")
             if temp is not None:
-                hum = hw["dht"].humidity
-                hum_s = f"{hum:.1f}" if hum is not None else "n/a"
-                log.info(f"Temp: {temp:.1f}C  Humidity: {hum_s}%")
                 update_vents_and_fan(hw, state, temp)
         except RuntimeError:
             pass

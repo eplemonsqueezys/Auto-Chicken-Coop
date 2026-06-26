@@ -8,8 +8,11 @@ import logging
 import threading
 from flask import Flask, jsonify, render_template_string, request
 
+from datetime import timedelta
+
 import config
 import hardware
+import weather
 import coop_controller as cc   # reuse the real vent/fan automation logic
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -58,6 +61,30 @@ _THRESHOLD_KEYS = {
 def run_climate_logic():
     """Apply the vent/fan automation at the current test temperature."""
     cc.update_vents_and_fan(_hw_climate, state, climate["temp"])
+
+# Schedule simulation: override the time-of-day to test the door's dawn/dusk
+# behavior without waiting for actual sunrise/sunset.
+sched = {"sim_minutes": None}   # None -> use real local time
+
+def eval_now():
+    base = weather.local_now()
+    if sched["sim_minutes"] is not None:
+        m = int(sched["sim_minutes"])
+        base = base.replace(hour=m // 60, minute=m % 60, second=0, microsecond=0)
+    return base
+
+def apply_schedule():
+    """Open/close the servo door based on the (possibly simulated) time vs the
+    real sunrise+offset / sunset+offset window."""
+    if config.DOOR_TYPE != "servo":
+        return
+    should_open = weather.door_should_be_open(eval_now())
+    if should_open is None:
+        return
+    if should_open and state["door_open"] is not True:
+        door_move(config.SERVO_DOOR_OPEN, True)
+    elif not should_open and state["door_open"] is not False:
+        door_move(config.SERVO_DOOR_CLOSE, False)
 
 def set_servo(channel, pulse):
     pca.channels[channel].duty_cycle = int(pulse * 65535 / 4096)
@@ -148,6 +175,88 @@ def api_climate_threshold():
         return jsonify({"ok": False, "error": "bad value"})
     setattr(config, _THRESHOLD_KEYS[key], val)   # live for this session
     run_climate_logic()
+    return jsonify({"ok": True})
+
+@app.route("/api/climate/pull_temp")
+def api_climate_pull():
+    t = weather.temperature_c()
+    if t is None:
+        return jsonify({"ok": False, "error": "no weather data (offline?)"})
+    climate["temp"] = round(t, 1)
+    run_climate_logic()
+    return jsonify({"ok": True, "temp": climate["temp"]})
+
+@app.route("/api/schedule")
+def api_schedule():
+    sunrise, sunset = weather.sun_times()
+    open_at, close_at = weather.door_window(sunrise, sunset)
+    now = eval_now()
+    fmt = lambda d: d.strftime("%H:%M") if d else "—"
+    return jsonify({
+        "zip": config.LOCATION_ZIP,
+        "now": fmt(now),
+        "now_min": now.hour * 60 + now.minute,
+        "sim": sched["sim_minutes"] is not None,
+        "sunrise": fmt(sunrise), "sunset": fmt(sunset),
+        "open_at": fmt(open_at), "close_at": fmt(close_at),
+        "dawn_offset": config.DOOR_OPEN_AFTER_DAWN_MIN,
+        "dusk_offset": config.DOOR_CLOSE_AFTER_DUSK_MIN,
+        "door_open": state["door_open"],
+    })
+
+@app.route("/api/schedule/time")
+def api_schedule_time():
+    try:
+        sched["sim_minutes"] = max(0, min(1439, int(float(request.args.get("value")))))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad time"})
+    apply_schedule()
+    return jsonify({"ok": True})
+
+@app.route("/api/schedule/realtime")
+def api_schedule_realtime():
+    sched["sim_minutes"] = None
+    apply_schedule()
+    return jsonify({"ok": True})
+
+@app.route("/api/location")
+def api_location():
+    return jsonify({
+        "zip": config.LOCATION_ZIP, "place": getattr(config, "LOCATION_PLACE", ""),
+        "lat": config.LATITUDE, "lon": config.LONGITUDE, "tz": config.TIMEZONE,
+        "dawn_offset": config.DOOR_OPEN_AFTER_DAWN_MIN,
+        "dusk_offset": config.DOOR_CLOSE_AFTER_DUSK_MIN,
+    })
+
+@app.route("/api/location/set")
+def api_location_set():
+    zipc = (request.args.get("zip") or "").strip()
+    tz   = (request.args.get("timezone") or config.TIMEZONE).strip()
+    updates = {"TIMEZONE": tz}
+    if zipc:
+        try:
+            g = weather.geocode_zip(zipc)
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"couldn't look up ZIP {zipc} ({e})"})
+        updates.update(LOCATION_ZIP=g["zip"], LATITUDE=g["latitude"],
+                       LONGITUDE=g["longitude"], LOCATION_PLACE=g["place"])
+    config.save_settings(updates)
+    weather.reset_cache()          # new location -> refetch temp/sun times
+    return jsonify({"ok": True, "zip": config.LOCATION_ZIP,
+                    "place": config.LOCATION_PLACE, "tz": config.TIMEZONE})
+
+@app.route("/api/location/offsets")
+def api_location_offsets():
+    upd = {}
+    try:
+        if request.args.get("dawn") is not None:
+            upd["DOOR_OPEN_AFTER_DAWN_MIN"] = int(float(request.args.get("dawn")))
+        if request.args.get("dusk") is not None:
+            upd["DOOR_CLOSE_AFTER_DUSK_MIN"] = int(float(request.args.get("dusk")))
+    except ValueError:
+        return jsonify({"ok": False, "error": "bad offset"})
+    config.save_settings(upd)
+    apply_schedule()
     return jsonify({"ok": True})
 
 @app.route("/api/vents/open")
@@ -332,6 +441,7 @@ HTML = """<!DOCTYPE html>
     <h2>Climate Control</h2>
     <div class="row"><span>Test temp</span><span class="val" id="cl-temp">—</span></div>
     <input type="range" id="cl-slider" class="slider" min="0" max="45" step="0.5">
+    <div class="btns"><button class="act" id="cl-pull">Pull live temp ({{ zip }})</button></div>
     <div class="row"><span>Vent open &ge;</span><input class="thr" id="thr-vent_open" type="number" step="0.5"></div>
     <div class="row"><span>Vent close &le;</span><input class="thr" id="thr-vent_close" type="number" step="0.5"></div>
     <div class="row"><span>Fan on &ge;</span><input class="thr" id="thr-fan_on" type="number" step="0.5"></div>
@@ -378,6 +488,31 @@ HTML = """<!DOCTYPE html>
     </div>
     <p class="foot">Hold to run, release to stop. For bench-testing the motor before limit switches are wired.</p>
     {% endif %}
+  </div>
+
+  <div class="card green">
+    <h2>Location</h2>
+    <div class="row"><span>Place</span><span class="val" id="loc-place">—</span></div>
+    <div class="row"><span>ZIP</span><input class="thr" id="loc-zip" type="text" style="width:90px;text-align:left"></div>
+    <div class="row"><span>Timezone</span><input class="thr" id="loc-tz" type="text" style="width:160px;text-align:left"></div>
+    <div class="btns"><button class="act" id="loc-apply">Apply location</button></div>
+    <div class="row" style="margin-top:8px"><span>Open after dawn (min)</span><input class="thr" id="loc-dawn" type="number" step="5"></div>
+    <div class="row"><span>Close after dusk (min)</span><input class="thr" id="loc-dusk" type="number" step="5"></div>
+    <div class="btns"><button class="act" id="loc-off-save">Save offsets</button></div>
+    <p class="foot">Set by setup.sh on install; change here for testing. ZIP is geocoded to lat/lon.</p>
+  </div>
+
+  <div class="card orange">
+    <h2>Door Schedule</h2>
+    <div class="row"><span>Location (ZIP)</span><span class="val" id="sc-zip">—</span></div>
+    <div class="row"><span>Sunrise</span><span class="val ok" id="sc-sunrise">—</span></div>
+    <div class="row"><span>Sunset</span><span class="val warn" id="sc-sunset">—</span></div>
+    <div class="row"><span>Open at (dawn+<span id="sc-dawnoff">?</span>m)</span><span class="val ok" id="sc-open">—</span></div>
+    <div class="row"><span>Close at (dusk+<span id="sc-duskoff">?</span>m)</span><span class="val warn" id="sc-close">—</span></div>
+    <div class="row"><span>Time</span><span class="val" id="sc-now">—</span></div>
+    <input type="range" id="sc-slider" class="slider" min="0" max="1439" step="5">
+    <div class="btns"><button class="act" id="sc-realtime">Use real time</button></div>
+    <p class="foot">Drag to simulate the time of day and watch the door open at dawn+offset / close at dusk+offset. "Use real time" returns to the live clock.</p>
   </div>
 
   <div class="card yellow">
@@ -491,6 +626,63 @@ document.getElementById('thr-save').addEventListener('click', async () => {
   loadState(); loadClimate();
 });
 
+const clPull = document.getElementById('cl-pull');
+if (clPull) clPull.addEventListener('click', () => {
+  fetch('/api/climate/pull_temp').then(r => r.json()).then(d => {
+    if (d.ok) { document.getElementById('cl-slider').value = d.temp; loadClimate(); loadState(); loadSensors(); }
+    else alert(d.error || 'no weather data');
+  });
+});
+
+function hhmm(m) {
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+async function loadSchedule() {
+  const s = await fetch('/api/schedule').then(r => r.json()).catch(() => null);
+  if (!s) return;
+  document.getElementById('sc-zip').textContent = s.zip;
+  document.getElementById('sc-sunrise').textContent = s.sunrise;
+  document.getElementById('sc-sunset').textContent = s.sunset;
+  document.getElementById('sc-open').textContent = s.open_at;
+  document.getElementById('sc-close').textContent = s.close_at;
+  document.getElementById('sc-dawnoff').textContent = s.dawn_offset;
+  document.getElementById('sc-duskoff').textContent = s.dusk_offset;
+  document.getElementById('sc-now').textContent = s.now + (s.sim ? ' (sim)' : '');
+  const sl = document.getElementById('sc-slider');
+  if (document.activeElement !== sl) sl.value = s.now_min;
+}
+let scTimer = null;
+document.getElementById('sc-slider').addEventListener('input', e => {
+  const m = +e.target.value;
+  document.getElementById('sc-now').textContent = hhmm(m) + ' (sim)';
+  clearTimeout(scTimer);
+  scTimer = setTimeout(() => fetch('/api/schedule/time?value=' + m).then(() => { loadState(); loadSchedule(); }), 150);
+});
+document.getElementById('sc-realtime').addEventListener('click', () => {
+  fetch('/api/schedule/realtime').then(() => { loadState(); loadSchedule(); });
+});
+
+function setIf(id, v) {
+  const e = document.getElementById(id);
+  if (e && document.activeElement !== e) e.value = v;
+}
+async function loadLocation() {
+  const l = await fetch('/api/location').then(r => r.json()).catch(() => null);
+  if (!l) return;
+  document.getElementById('loc-place').textContent = l.place || (l.lat.toFixed(2) + ', ' + l.lon.toFixed(2));
+  setIf('loc-zip', l.zip); setIf('loc-tz', l.tz);
+  setIf('loc-dawn', l.dawn_offset); setIf('loc-dusk', l.dusk_offset);
+}
+document.getElementById('loc-apply').addEventListener('click', () => {
+  const z = document.getElementById('loc-zip').value, tz = document.getElementById('loc-tz').value;
+  fetch('/api/location/set?zip=' + encodeURIComponent(z) + '&timezone=' + encodeURIComponent(tz))
+    .then(r => r.json()).then(d => { if (!d.ok) alert(d.error || 'failed'); loadLocation(); loadSchedule(); });
+});
+document.getElementById('loc-off-save').addEventListener('click', () => {
+  const dn = document.getElementById('loc-dawn').value, dk = document.getElementById('loc-dusk').value;
+  fetch('/api/location/offsets?dawn=' + dn + '&dusk=' + dk).then(() => { loadSchedule(); loadLocation(); });
+});
+
 async function loadDoor() {
   const d = await fetch('/api/door').then(r => r.json()).catch(() => null);
   if (!d || d.type !== 'servo') return;
@@ -518,15 +710,15 @@ function holdJog(btnId, dir) {
 holdJog('jog-fwd', 'forward');
 holdJog('jog-bwd', 'backward');
 
-loadSensors(); loadState(); loadLog(); loadClimate(); loadDoor();
-setInterval(() => { loadSensors(); loadState(); loadClimate(); loadDoor(); }, 5000);
+loadSensors(); loadState(); loadLog(); loadClimate(); loadDoor(); loadSchedule(); loadLocation();
+setInterval(() => { loadSensors(); loadState(); loadClimate(); loadDoor(); loadSchedule(); loadLocation(); }, 5000);
 </script>
 </body>
 </html>"""
 
 @app.route("/")
 def index():
-    return render_template_string(HTML, door_type=config.DOOR_TYPE)
+    return render_template_string(HTML, door_type=config.DOOR_TYPE, zip=config.LOCATION_ZIP)
 
 if __name__ == "__main__":
     print(f"http://0.0.0.0:5000  —  your Pi's IP: run 'hostname -I'")

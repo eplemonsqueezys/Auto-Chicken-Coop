@@ -76,6 +76,23 @@ SERVO_DOOR_OPEN  = SERVOMAX       # tweak to the real fully-open spot later
 SERVO_DOOR_CLOSE = SERVOMIN       # tweak to the real fully-closed spot later
 DOOR_SERVO_TRAVEL_S = 5.0         # seconds to sweep open<->closed (tweak in web UI)
 
+# ── Location, weather & sun schedule (Open-Meteo, no API key) ──────────────
+LOCATION_ZIP = "47909"            # Lafayette, IN — change LAT/LON if you move
+LATITUDE  = 40.36
+LONGITUDE = -86.89
+TIMEZONE  = "America/New_York"    # Eastern (EST in winter, EDT in summer)
+WEATHER_REFRESH_MIN = 10          # re-fetch temp/sun times at most this often
+
+# Door schedule driven by real sunrise/sunset for the location above:
+#   open  DOOR_OPEN_AFTER_DAWN_MIN minutes after sunrise
+#   close DOOR_CLOSE_AFTER_DUSK_MIN minutes after sunset
+USE_SUN_SCHEDULE = True
+DOOR_OPEN_AFTER_DAWN_MIN  = 30
+DOOR_CLOSE_AFTER_DUSK_MIN = 30
+
+# Pull the vent/fan temperature from the web for the location (instead of a DHT).
+USE_WEATHER_TEMP = True
+
 # Relay polarity — SONGLE SLA-05VDC-SL-C (direct-drive board, no optocoupler)
 # HIGH = relay energized = load ON
 # If you swap to an optocoupler module (active-LOW), set this to False
@@ -155,3 +172,56 @@ def _apply_detected_overrides():
 
 
 _apply_detected_overrides()
+
+
+# ── User location/schedule settings (settings.json) ───────────────────────
+# Written by setup.sh (prompted on install) and editable live from the debug
+# panel's Location card — so the location is NOT hardcoded. These keys override
+# the defaults above when settings.json is present.
+_SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+_SETTINGS_KEYS = [
+    "LOCATION_ZIP", "LOCATION_PLACE", "LATITUDE", "LONGITUDE", "TIMEZONE",
+    "DOOR_OPEN_AFTER_DAWN_MIN", "DOOR_CLOSE_AFTER_DUSK_MIN",
+]
+LOCATION_PLACE = ""   # human-readable "City, ST" filled in by geocoding
+
+
+def _apply_settings():
+    if not os.path.exists(_SETTINGS_FILE):
+        return
+    import json
+    try:
+        with open(_SETTINGS_FILE) as f:
+            s = json.load(f)
+    except (ValueError, OSError):
+        return
+    g = globals()
+    for k in _SETTINGS_KEYS:
+        if k in s:
+            g[k] = s[k]
+
+
+def save_settings(updates):
+    """Persist user-editable location/schedule settings to settings.json and
+    apply them live. Returns the merged settings dict."""
+    import json
+    current = {}
+    if os.path.exists(_SETTINGS_FILE):
+        try:
+            with open(_SETTINGS_FILE) as f:
+                current = json.load(f)
+        except (ValueError, OSError):
+            current = {}
+    for k, v in updates.items():
+        if k in _SETTINGS_KEYS:
+            current[k] = v
+    with open(_SETTINGS_FILE, "w") as f:
+        json.dump(current, f, indent=2)
+    g = globals()
+    for k, v in current.items():
+        if k in _SETTINGS_KEYS:
+            g[k] = v
+    return current
+
+
+_apply_settings()
