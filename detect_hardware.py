@@ -89,10 +89,13 @@ def probe_arduino(port, baud=115200):
         import serial
     except ImportError:
         return None  # pyserial not installed
-    result = {"responds": False, "streaming": False, "sample": None}
+    result = {"responds": False, "streaming": False, "sample": None, "busy": False}
     try:
         ser = serial.Serial(port, baud, timeout=1)
-    except Exception:
+    except Exception as e:
+        # Port exists but couldn't be opened (already in use, permissions, etc.)
+        result["busy"] = True
+        result["error"] = str(e)
         return result
     try:
         time.sleep(2.0)            # board resets when the port opens
@@ -100,7 +103,14 @@ def probe_arduino(port, baud=115200):
         ser.write(b"P\n")
         deadline = time.time() + 3.0
         while time.time() < deadline:
-            line = ser.readline().decode("ascii", "ignore").strip()
+            try:
+                line = ser.readline().decode("ascii", "ignore").strip()
+            except Exception as e:
+                # "device reports readiness... returned no data" = port held by
+                # another program (Serial Monitor?) or a USB hiccup. Don't crash.
+                result["busy"] = True
+                result["error"] = str(e)
+                break
             if not line:
                 continue
             if line.startswith("PONG"):
@@ -112,13 +122,16 @@ def probe_arduino(port, baud=115200):
             if result["responds"] and result["sample"]:
                 break
     finally:
-        ser.close()
+        try:
+            ser.close()
+        except Exception:
+            pass
     return result
 
 
 def detect_arduino():
     info = {"present": False, "port": None, "responds": False,
-            "streaming": False, "sample": None}
+            "streaming": False, "sample": None, "busy": False, "error": None}
     for port in candidate_serial_ports():
         info["present"] = True
         probe = probe_arduino(port)
@@ -129,6 +142,8 @@ def detect_arduino():
             info.update(port=port, responds=True,
                         streaming=probe["streaming"], sample=probe.get("sample"))
             return info
+        if probe.get("busy"):
+            info.update(port=port, busy=True, error=probe.get("error"))
         info["port"] = info["port"] or port
     return info
 
@@ -237,12 +252,22 @@ def main():
     if ard["present"]:
         state = ("running coop_arduino (PONG+SENS)" if ard["streaming"]
                  else "responds to ping" if ard["responds"]
+                 else "PORT BUSY — close the Serial Monitor or stop debug_panel" if ard.get("busy")
                  else "serial device found, but not speaking coop protocol")
         print(f"  Arduino   : {ard['port'] or '(port found)'} — {state}")
-        if ard["present"] and not ard["responds"]:
+        if not ard["responds"] and not ard.get("busy"):
             print("              -> flash coop_arduino/coop_arduino.ino to enable it")
     else:
         print("  Arduino   : none on /dev/ttyACM* or /dev/ttyUSB*")
+
+    # If the port is busy we can't tell what's connected — don't risk rewriting
+    # a working config to "simulated". Bail out with guidance.
+    if ard.get("busy") and not ard["responds"]:
+        print("\nThe Arduino serial port is in use, so detection is unreliable.")
+        print("Close the Arduino IDE Serial Monitor (and stop debug_panel if it's")
+        print("running), then re-run:  python3 detect_hardware.py")
+        print("Nothing was changed.")
+        return
 
     overrides, notes = decide(i2c, spi, ard)
 

@@ -16,7 +16,7 @@ SIM = {
                       # Falls back to simulation automatically if the Arduino isn't
                       # plugged in, so this is safe to leave False.
     "dht":    True,   # DHT22 -> simulated; flip False once wired to the Arduino (D2)
-    "fan":    True,   # fan relay -> simulated until wired
+    "fan":    False,  # fan relay -> REAL SLA-05VDC-SL-C on GPIO17 (active-HIGH)
     "water":  True,   # water float switches + LEDs -> simulated until wired
     "door":   False,  # door motor (L298N) on the Pi -> REAL (tested)
     "lights": True,   # coop + run light relays -> simulated until wired
@@ -45,6 +45,7 @@ ARDUINO = {
                       # servo noise from the Pi; Pi only talks USB serial)
     "adc":    True,   # 'adc' subsystem -> LDR + food pot on the Arduino's analog pins
     "dht":    True,   # 'dht' subsystem -> DHT22 read by the Arduino
+    "fan":    True,   # 'fan' relay driven from an Arduino digital pin (below)
 }
 
 ARDUINO_PORT = "/dev/ttyACM0"   # Uno/Nano usually ttyACM0 or ttyUSB0; check `ls /dev/tty*`
@@ -52,6 +53,12 @@ ARDUINO_BAUD = 115200
 
 # Arduino analog pins are 10-bit (0-1023). Used to normalize LDR/food to 0.0-1.0.
 ARDUINO_ADC_MAX = 1023
+
+# Relays driven from the Arduino's digital pins (relay name -> Arduino pin).
+# The fan relay's IN wire goes to this Arduino pin instead of a Pi GPIO.
+ARDUINO_RELAY_PINS = {
+    "fan": 7,        # SLA-05VDC-SL-C IN -> Arduino D7
+}
 
 # PCA9685 — same board as the workshop vac system
 # Servos: MG995 DIGI HI-SPEED (metal gear, same pulse range as MG996R)

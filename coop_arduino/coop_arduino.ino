@@ -9,6 +9,7 @@
  * Serial protocol (115200 baud, newline-terminated):
  *   Pi  -> Arduino:
  *       "S<ch> <angle>"   set servo channel <ch> to <angle> degrees (0-180)
+ *       "R<pin> <0|1>"    drive a digital pin LOW/HIGH (relays, e.g. fan on D7)
  *       "P"               ping -> replies "PONG"
  *   Arduino -> Pi (streamed ~3x/sec):
  *       "SENS <tempC> <hum> <ldrRaw> <foodRaw>"
@@ -91,10 +92,19 @@ void handleCommand(String line) {
       int angle = line.substring(sp + 1).toInt();
       setServo(ch, angle);
     }
+  } else if (line.charAt(0) == 'R') {
+    // "R<pin> <0|1>"  -> drive a digital pin (relays: fan, etc.)
+    int sp = line.indexOf(' ');
+    if (sp > 0) {
+      int rpin = line.substring(1, sp).toInt();
+      int val  = line.substring(sp + 1).toInt();
+      pinMode(rpin, OUTPUT);
+      digitalWrite(rpin, val ? HIGH : LOW);
+    }
   } else if (line.charAt(0) == 'P') {
     Serial.println("PONG");
   }
-  
+
 }
 
 void report() {

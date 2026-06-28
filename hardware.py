@@ -284,6 +284,15 @@ def make_dht():
 def make_relay(component, pin, name):
     if use_sim(component):
         return MockOutput(name)
+    # Drive the relay from an Arduino digital pin if one is mapped for it.
+    if via_arduino(component) and name in getattr(config, "ARDUINO_RELAY_PINS", {}):
+        try:
+            import arduino_link
+            return arduino_link.ArduinoRelay(config.ARDUINO_RELAY_PINS[name], name,
+                                             active_high=config.RELAY_ACTIVE_HIGH)
+        except Exception as e:
+            log.warning(f"[ARDUINO] relay '{name}' unavailable ({e}); SIMULATING it.")
+            return MockOutput(name)
     _ensure_pin_factory()
     from gpiozero import OutputDevice
     return OutputDevice(pin, active_high=config.RELAY_ACTIVE_HIGH, initial_value=False)

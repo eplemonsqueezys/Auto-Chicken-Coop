@@ -113,6 +113,13 @@ class ArduinoLink:
             self._ser.write(msg)
         log.info(f"[ARDUINO] servo ch{channel} -> {angle}deg")
 
+    def send_relay(self, pin, level):
+        """Set Arduino digital pin HIGH (level truthy) or LOW."""
+        lvl = 1 if level else 0
+        if self._ser is not None:
+            self._ser.write(f"R{pin} {lvl}\n".encode("ascii"))
+        log.info(f"[ARDUINO] relay pin{pin} -> {'HIGH' if lvl else 'LOW'}")
+
     def stop(self):
         self._stop = True
         if self._ser is not None:
@@ -159,6 +166,31 @@ class ArduinoServoDriver:
     @frequency.setter
     def frequency(self, f):
         self._freq = f  # servo timing lives on the Arduino; nothing to send
+
+
+class ArduinoRelay:
+    """Looks like a gpiozero OutputDevice (.on()/.off()/.value) but switches a
+    digital pin on the Arduino over serial. Honors active-high/low."""
+    def __init__(self, pin, name, active_high=True):
+        self.pin = pin
+        self.name = name
+        self.active_high = active_high
+        self.value = False
+        self._link = get_link()
+        self._write()                       # start de-energized (off)
+
+    def _write(self):
+        on_level = 1 if self.active_high else 0
+        off_level = 0 if self.active_high else 1
+        self._link.send_relay(self.pin, on_level if self.value else off_level)
+
+    def on(self):
+        self.value = True
+        self._write()
+
+    def off(self):
+        self.value = False
+        self._write()
 
 
 class ArduinoADC:
