@@ -50,6 +50,12 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 #define SERVOMIN 150           // angle 0   — ~full travel low end
 #define SERVOMAX 600           // angle 180 — ~full travel high end
 
+// --- Relays (digital outputs) ---
+// Fan relay IN wire -> this pin. MUST match config.ARDUINO_RELAY_PINS["fan"].
+// Initialized LOW at boot so the fan stays OFF until the Pi commands it
+// (assumes an active-HIGH relay module; set HIGH here if yours is active-LOW).
+#define FAN_RELAY_PIN 7
+
 // --- Sensors ---
 #define DHT_PIN  2
 #define DHT_TYPE DHT22
@@ -69,6 +75,9 @@ void setup() {
 #if USE_DHT
   dht.begin();
 #endif
+  // Fan relay OFF at boot (before the Pi connects) so it can't glitch on.
+  pinMode(FAN_RELAY_PIN, OUTPUT);
+  digitalWrite(FAN_RELAY_PIN, LOW);
   // Park both vent servos closed on boot.
   setServo(0, 0);
   setServo(1, 0);
