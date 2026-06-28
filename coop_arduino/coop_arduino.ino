@@ -57,6 +57,11 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 // commands it (active-HIGH relay; set HIGH here if yours is active-LOW).
 #define FAN_RELAY_PIN 13
 
+// 1 = active-HIGH relay (IN HIGH = ON), 0 = active-LOW (IN LOW = ON).
+// This module is active-LOW. Keep in sync with RELAY_ACTIVE_HIGH in config.py.
+#define RELAY_ACTIVE_HIGH 0
+#define RELAY_OFF_LEVEL (RELAY_ACTIVE_HIGH ? LOW : HIGH)
+
 // --- Sensors ---
 #define DHT_PIN  2
 #define DHT_TYPE DHT22
@@ -77,8 +82,9 @@ void setup() {
   dht.begin();
 #endif
   // Fan relay OFF at boot (before the Pi connects) so it can't glitch on.
+  // Active-LOW module -> OFF is HIGH.
   pinMode(FAN_RELAY_PIN, OUTPUT);
-  digitalWrite(FAN_RELAY_PIN, LOW);
+  digitalWrite(FAN_RELAY_PIN, RELAY_OFF_LEVEL);
   // Park both vent servos closed on boot.
   setServo(0, 0);
   setServo(1, 0);

@@ -106,10 +106,9 @@ RAIN_CLOSE_VENTS = True
 RAIN_PROBABILITY_THRESHOLD = 50   # % chance within the lookahead counts as "rain expected"
 RAIN_LOOKAHEAD_HOURS = 3          # how far ahead to treat forecast rain as imminent
 
-# Relay polarity — SONGLE SLA-05VDC-SL-C (direct-drive board, no optocoupler)
-# HIGH = relay energized = load ON
-# If you swap to an optocoupler module (active-LOW), set this to False
-RELAY_ACTIVE_HIGH = True
+# Relay polarity. This module is ACTIVE-LOW: IN pulled LOW (to GND) energizes
+# the relay = load ON. (Common for opto-isolated relay boards.)
+RELAY_ACTIVE_HIGH = False
 
 # GPIO pins (BCM)
 PIN_DHT22             = 4
