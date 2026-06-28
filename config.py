@@ -57,7 +57,7 @@ ARDUINO_ADC_MAX = 1023
 # Relays driven from the Arduino's digital pins (relay name -> Arduino pin).
 # The fan relay's IN wire goes to this Arduino pin instead of a Pi GPIO.
 ARDUINO_RELAY_PINS = {
-    "fan": 7,        # SLA-05VDC-SL-C IN -> Arduino D7
+    "fan": 13,       # SLA-05VDC-SL-C IN -> Arduino D13 (onboard LED mirrors it)
 }
 
 # PCA9685 — same board as the workshop vac system

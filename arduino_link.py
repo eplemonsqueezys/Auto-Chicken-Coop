@@ -64,13 +64,23 @@ class ArduinoLink:
 
     # -- reading -----------------------------------------------------------
     def _reader(self):
+        errs = 0
         while not self._stop:
             try:
                 raw = self._ser.readline().decode("ascii", "ignore").strip()
             except Exception as e:
-                log.warning(f"serial read error: {e}")
-                time.sleep(0.5)
+                errs += 1
+                if errs == 1:
+                    # Log once, then retry quietly. Usually means another program
+                    # has the port (Serial Monitor / both scripts running) or the
+                    # USB link dropped.
+                    log.warning(f"serial read error ({e}); retrying quietly — is "
+                                f"another program using {self.port}?")
+                time.sleep(min(5.0, 0.5 * errs))   # back off up to 5s
                 continue
+            if errs:
+                log.info("serial link recovered")
+                errs = 0
             if raw:
                 self.parse_line(raw)
 

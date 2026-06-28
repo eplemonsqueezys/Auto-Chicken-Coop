@@ -52,8 +52,9 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 
 // --- Relays (digital outputs) ---
 // Fan relay IN wire -> this pin. MUST match config.ARDUINO_RELAY_PINS["fan"].
-// Initialized LOW at boot so the fan stays OFF until the Pi commands it
-// (assumes an active-HIGH relay module; set HIGH here if yours is active-LOW).
+// D13 also drives the Uno's onboard LED, so it mirrors the relay state — handy
+// for testing. Initialized LOW at boot so the fan stays OFF until the Pi
+// commands it (active-HIGH relay; set HIGH here if yours is active-LOW).
 #define FAN_RELAY_PIN 13
 
 // --- Sensors ---
